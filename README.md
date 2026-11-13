@@ -175,11 +175,14 @@ one price changed       SyncReport(source='product', added=0, updated=1,  delete
 (output of runs against the Azure index). `retail-rag sync <file>` runs the same code
 locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
 
-## Copilot Studio integration
+## Deployment and Copilot Studio
 
-`/openapi.json` exposes a single `AskAssistant` operation. In Copilot Studio: *Tools → Add a tool →
-REST API / custom connector*, import the spec (host the API on Azure Container Apps or App
-Service), and call it from a topic so the copilot answers with the cited sources.
+- **Container image**: every push to `main` publishes `ghcr.io/orhansonmeztr/retail-rag-assistant`
+  (`.github/workflows/publish.yml`); with OIDC secrets configured the same workflow rolls it
+  out to **Azure Container Apps** (scale-to-zero). Commands: [docs/deploy.md](docs/deploy.md).
+- **Copilot Studio**: `copilot/openapi-v2.yaml` is a Swagger 2.0 definition of the
+  `AskAssistant` operation with API-key auth, ready to import as a REST API tool / Power
+  Platform custom connector. Step-by-step: [docs/copilot-studio.md](docs/copilot-studio.md).
 
 ## Next steps
 

@@ -1,0 +1,64 @@
+# Swagger 2.0 description of the assistant API for a Power Platform custom connector /
+# Copilot Studio REST API tool. Replace `host` with your Container Apps FQDN.
+swagger: "2.0"
+info:
+  title: Retail RAG Assistant
+  description: Grounded answers about products and customer-service policies, with sources.
+  version: "1.0"
+host: <your-app>.<region>.azurecontainerapps.io
+basePath: /
+schemes: [https]
+consumes: [application/json]
+produces: [application/json]
+securityDefinitions:
+  apiKey:
+    type: apiKey
+    in: header
+    name: X-API-Key
+security:
+  - apiKey: []
+paths:
+  /chat:
+    post:
+      operationId: AskAssistant
+      summary: Ask the store assistant
+      description: >-
+        Answers a customer question about products (recommendations, sizes, prices,
+        materials) or store policies (returns, shipping, payment, loyalty points, gift
+        cards). Returns the answer text and the source documents it is based on.
+      parameters:
+        - in: body
+          name: body
+          required: true
+          schema:
+            type: object
+            required: [question]
+            properties:
+              question:
+                type: string
+                description: The customer's question, in Turkish or English.
+                x-ms-summary: Question
+      responses:
+        "200":
+          description: Answer with sources
+          schema:
+            type: object
+            properties:
+              answer:
+                type: string
+                description: Answer text with [id] citations.
+                x-ms-summary: Answer
+              citations:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string}
+                    title: {type: string}
+                    source: {type: string}
+                    url: {type: string}
+              blocked:
+                type: boolean
+                description: True when the request was refused by the content filter.
+        "401": {description: Missing or invalid API key}
+        "429": {description: Rate limit exceeded}
