@@ -1,5 +1,7 @@
 # Retail RAG Assistant — Azure OpenAI + Azure AI Search
 
+[![CI](https://github.com/orhansonmeztr/retail-rag-assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/orhansonmeztr/retail-rag-assistant/actions/workflows/ci.yml)
+
 A grounded customer assistant for a department store: it recommends products from a catalog and
 answers customer-service questions (returns, shipping, payments, loyalty points) from an FAQ,
 **citing the source document for every claim**. Built with Azure OpenAI (deployed through Azure AI
@@ -63,6 +65,10 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
    ```
    Or create the same resources from the **Azure AI Foundry** portal: create a project, deploy
    `gpt-4.1-mini` and `text-embedding-3-small`, and add an Azure AI Search connection.
+
+   > The results below were produced with resources created in the Foundry portal.
+   > `infra/main.bicep` describes the same setup but has not been deployed end to end yet;
+   > model availability and quota differ per region and subscription.
 2. **Configure**: `cp .env.example .env` and fill in endpoints (keys optional — leave empty to use
    `az login` / managed identity).
 3. **Index and ask**:
