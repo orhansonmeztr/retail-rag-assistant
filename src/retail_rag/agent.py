@@ -195,4 +195,5 @@ class RetailAssistant:
             usage=usage,
             prompt_version=self.prompt_version,
             latency_ms=latency_ms,
+            context_documents=list(seen.values()),
         )

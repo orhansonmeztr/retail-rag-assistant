@@ -101,3 +101,5 @@ class AgentAnswer(BaseModel):
     usage: Usage
     prompt_version: str
     latency_ms: int
+    # documents the tools returned; used by evaluation, not sent to API clients
+    context_documents: list[Document] = Field(default_factory=list, exclude=True)

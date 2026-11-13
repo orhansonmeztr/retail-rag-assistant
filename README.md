@@ -16,7 +16,7 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 | Grounding | System prompt requires `[doc-id]` citations; ids never retrieved are dropped from the response |
 | Integration | FastAPI `/chat` endpoint; its OpenAPI spec imports into **Copilot Studio / Power Automate** as a custom connector |
 | LLMOps | Versioned prompt (`prompts/assistant.yaml`), per-request token usage + latency + prompt version, golden-set evaluation (recall@k, MRR), **LLM-as-judge** groundedness & relevance, CI quality gate |
-| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 17 offline unit tests with a scripted fake LLM, Docker, GitHub Actions, Bicep IaC, keyless Entra ID auth supported |
+| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 20 offline unit tests with a scripted fake LLM, Docker, GitHub Actions, Bicep IaC, keyless Entra ID auth supported |
 
 ## Architecture
 
@@ -24,7 +24,7 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 flowchart LR
     U[Customer / Copilot Studio] -->|POST /chat| API[FastAPI]
     API --> AG[RetailAssistant<br/>tool-calling loop]
-    AG <-->|chat completions + tools| AOAI[(Azure OpenAI<br/>gpt-4o-mini)]
+    AG <-->|chat completions + tools| AOAI[(Azure OpenAI<br/>gpt-4.1-mini)]
     AG -->|search_products / search_policies| R[Retriever]
     R -->|embed query| EMB[(Azure OpenAI<br/>text-embedding-3-small)]
     R -->|hybrid + filter| AIS[(Azure AI Search<br/>BM25 + HNSW + semantic)]
@@ -50,7 +50,7 @@ infra/main.bicep     Azure AI Search + Azure OpenAI + model deployments
 ```bash
 uv venv && source .venv/bin/activate      # or python -m venv .venv
 uv pip install -e ".[dev]"
-pytest -q                                 # 17 tests, all offline
+pytest -q                                 # 20 tests, all offline
 retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
 ```
 
@@ -62,7 +62,7 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
    az deployment group create -g rg-retail-rag -f infra/main.bicep -p prefix=<unique-name>
    ```
    Or create the same resources from the **Azure AI Foundry** portal: create a project, deploy
-   `gpt-4o-mini` and `text-embedding-3-small`, and add an Azure AI Search connection.
+   `gpt-4.1-mini` and `text-embedding-3-small`, and add an Azure AI Search connection.
 2. **Configure**: `cp .env.example .env` and fill in endpoints (keys optional — leave empty to use
    `az login` / managed identity).
 3. **Index and ask**:
@@ -104,10 +104,26 @@ The end-to-end report records the prompt version, so a change to the prompt or m
 compared run-to-run. CI runs the offline gate on every push; the Azure job runs when the
 `RUN_AZURE_EVAL` repository variable and secrets are set.
 
-| Run | recall@5 | MRR | groundedness (1-5) | relevance (1-5) | p50 latency |
-|---|---|---|---|---|---|
-| offline hashing baseline | 1.00 | 1.00 | – | – | – |
-| Azure hybrid (fill in after your run) | | | | | |
+**Retrieval** (15 golden questions, k=5)
+
+| Backend | recall@5 | MRR |
+|---|---|---|
+| offline hashing baseline | 1.00 | 1.00 |
+| Azure AI Search hybrid + `text-embedding-3-small` | 1.00 | 0.97 |
+
+**End-to-end** (gpt-4.1-mini as agent and judge, mean of 2 runs per prompt version)
+
+| Prompt | tool hit-rate | answers with citation | expected doc cited | groundedness (1-5) | relevance (1-5) | p50 latency | avg tokens |
+|---|---|---|---|---|---|---|---|
+| v1.0.0 | 0.93 | 0.87 | 0.87 | 4.97 | 5.00 | 4.2 s | 1,366 |
+| v1.1.0 | **1.00** | **1.00** | **1.00** | 5.00 | 5.00 | 3.5 s | 1,651 |
+
+What changed between versions (see the changelog in `prompts/assistant.yaml`):
+the eval reports showed v1.0.0 (a) left `[id]` citations out of some product recommendations
+and (b) once added a `gender: "unisex"` filter the customer never asked for, which hid the
+right hiking boot and produced a false "we don't have it". v1.1.0 makes citations mandatory
+and restricts filters to what the customer stated, at the cost of ~20% more prompt tokens.
+With only 15 questions these numbers are a smoke test, not a benchmark.
 
 ## Copilot Studio integration
 

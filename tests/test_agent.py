@@ -46,3 +46,15 @@ def test_agent_survives_bad_tool_arguments(retriever):
     ans = make_assistant(client, retriever).ask("?")
     assert ans.answer == "Bulamadım."
     assert ans.tool_calls[0].result_ids == []
+
+
+def test_context_documents_not_serialized(retriever):
+    client = ScriptedChatClient(
+        [
+            completion(tool_calls=[tool_call("c1", "search_policies", {"query": "iade"})]),
+            completion(content="ok"),
+        ]
+    )
+    ans = make_assistant(client, retriever).ask("iade?")
+    assert ans.context_documents  # available to evaluation
+    assert "context_documents" not in ans.model_dump()  # but not in API responses

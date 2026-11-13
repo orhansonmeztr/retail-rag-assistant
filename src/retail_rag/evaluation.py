@@ -90,24 +90,34 @@ def evaluate_answers(
     for ex in golden:
         ans = assistant.ask(ex.question)
         retrieved = {i for t in ans.tool_calls for i in t.result_ids}
-        context_docs = [r.document for r in assistant.retriever.retrieve(ex.question, ex.filter)]
-        context = "\n---\n".join(f"[{d.id}] {d.content}" for d in context_docs)
+        # judge against exactly what the agent saw, not a separate retrieval
+        context = "\n---\n".join(f"[{d.id}] {d.content}" for d in ans.context_documents)
         scores = judge(judge_client, judge_deployment, ex.question, context, ans.answer)
+        cited = [c.id for c in ans.citations]
         rows.append(
             {
                 "question": ex.question,
                 "answer": ans.answer,
                 "hit": bool(retrieved & set(ex.expected_ids)),
-                "cited": [c.id for c in ans.citations],
+                "cited": cited,
+                "tool_calls": [t.model_dump() for t in ans.tool_calls],
+                "has_citation": bool(cited),
+                "expected_cited": bool(set(cited) & set(ex.expected_ids)),
                 "latency_ms": ans.latency_ms,
                 "tokens": ans.usage.prompt_tokens + ans.usage.completion_tokens,
                 **scores,
             }
         )
+    return summarize(assistant.prompt_version, rows)
+
+
+def summarize(prompt_version: str, rows: list[dict]) -> dict:
     return {
-        "prompt_version": assistant.prompt_version,
+        "prompt_version": prompt_version,
         "n": len(rows),
         "tool_hit_rate": statistics.mean(r["hit"] for r in rows),
+        "citation_rate": statistics.mean(r["has_citation"] for r in rows),
+        "expected_cited_rate": statistics.mean(r["expected_cited"] for r in rows),
         "groundedness": statistics.mean(r["groundedness"] for r in rows),
         "relevance": statistics.mean(r["relevance"] for r in rows),
         "p50_latency_ms": statistics.median(r["latency_ms"] for r in rows),
