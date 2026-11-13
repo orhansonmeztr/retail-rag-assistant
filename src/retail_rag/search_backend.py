@@ -99,6 +99,8 @@ class AzureSearchBackend:
         credential,
         dimensions: int = 1536,
         use_semantic_ranker: bool = False,
+        timeout_s: float = 10.0,
+        max_retries: int = 3,
     ) -> None:
         from azure.search.documents import SearchClient
         from azure.search.documents.indexes import SearchIndexClient
@@ -106,8 +108,17 @@ class AzureSearchBackend:
         self.index_name = index_name
         self.dimensions = dimensions
         self.use_semantic_ranker = use_semantic_ranker
-        self.index_client = SearchIndexClient(endpoint=endpoint, credential=credential)
-        self.client = SearchClient(endpoint=endpoint, index_name=index_name, credential=credential)
+        # azure-core defaults are a 300 s read timeout; a chat request must fail much sooner
+        transport = {
+            "connection_timeout": min(timeout_s, 5.0),
+            "read_timeout": timeout_s,
+            "retry_total": max_retries,
+            "retry_backoff_factor": 0.5,
+        }
+        self.index_client = SearchIndexClient(endpoint=endpoint, credential=credential, **transport)
+        self.client = SearchClient(
+            endpoint=endpoint, index_name=index_name, credential=credential, **transport
+        )
 
     def build_index(self):
         from azure.search.documents.indexes.models import (

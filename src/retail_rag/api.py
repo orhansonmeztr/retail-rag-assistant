@@ -71,6 +71,23 @@ def get_rate_limiter() -> RateLimiter:
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
+def upstream_error(exc: Exception) -> HTTPException:
+    """Map a failure of Azure OpenAI / AI Search to a status that tells clients whether a
+    retry makes sense: 504 timeout, 503 busy (after the SDK's own retries), 502 otherwise."""
+    import openai
+    from azure.core.exceptions import ServiceRequestTimeoutError, ServiceResponseTimeoutError
+
+    if isinstance(
+        exc, openai.APITimeoutError | ServiceRequestTimeoutError | ServiceResponseTimeoutError
+    ):
+        return HTTPException(status_code=504, detail="upstream timeout")
+    if isinstance(exc, openai.RateLimitError):
+        return HTTPException(
+            status_code=503, detail="model is busy, retry later", headers={"Retry-After": "10"}
+        )
+    return HTTPException(status_code=502, detail="upstream model or search error")
+
+
 def authorize(
     request: Request,
     api_key: Annotated[str | None, Security(api_key_header)],
@@ -120,7 +137,7 @@ def chat(
         return assistant.ask(req.question, req.history)
     except Exception as exc:
         log.exception("chat failed")
-        raise HTTPException(status_code=502, detail="upstream model or search error") from exc
+        raise upstream_error(exc) from exc
 
 
 @app.post(
@@ -151,9 +168,10 @@ def chat_stream(
                 if event["type"] == "done":
                     event = {"type": "done", **event["answer"].model_dump()}
                 yield sse(event)
-        except Exception:  # headers are already sent; report the failure in-band
+        except Exception as exc:  # headers are already sent; report the failure in-band
             log.exception("chat stream failed")
-            yield sse({"type": "error", "detail": "upstream model or search error"})
+            err = upstream_error(exc)
+            yield sse({"type": "error", "status": err.status_code, "detail": err.detail})
 
     return StreamingResponse(
         events(),

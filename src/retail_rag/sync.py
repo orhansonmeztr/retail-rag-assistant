@@ -79,6 +79,8 @@ def build_sync_target(settings) -> Retriever:
         settings.azure_search_index,
         search_credential(settings),
         settings.embedding_dimensions,
+        timeout_s=max(settings.search_timeout_s, 30.0),  # uploads are slower than queries
+        max_retries=settings.search_max_retries,
     )
     backend.ensure_index()
     embedder = AzureOpenAIEmbedder(

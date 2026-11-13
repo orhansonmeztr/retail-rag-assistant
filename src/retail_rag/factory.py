@@ -33,6 +33,8 @@ def build_retriever(settings: Settings, openai_client=None) -> Retriever:
         credential=search_credential(settings),
         dimensions=settings.embedding_dimensions,
         use_semantic_ranker=settings.use_semantic_ranker,
+        timeout_s=settings.search_timeout_s,
+        max_retries=settings.search_max_retries,
     )
     embedder = AzureOpenAIEmbedder(
         openai_client, settings.azure_openai_embedding_deployment, settings.embedding_dimensions
