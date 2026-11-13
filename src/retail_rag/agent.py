@@ -6,9 +6,13 @@ import json
 import logging
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from .models import (
     AgentAnswer,
@@ -20,7 +24,7 @@ from .models import (
     Usage,
 )
 from .retriever import Retriever
-from .telemetry import GEN_AI_SYSTEM, record_usage, span
+from .telemetry import GEN_AI_SYSTEM, record_usage, span, tracer
 
 log = logging.getLogger(__name__)
 
@@ -150,6 +154,70 @@ class RetailAssistant:
                 s.set_attribute("gen_ai.response.finish_reasons", [resp.choices[0].finish_reason])
             return resp
 
+    def _chat_stream(self, usage: Usage, **kwargs) -> Iterator[tuple[str, object]]:
+        """Streaming chat completion. Yields ("token", text) as content arrives, then one
+        ("message", msg) with the assembled content and tool calls. The span is managed
+        by hand because it stays open across yields, which may resume on other threads."""
+        s = tracer.start_span(
+            f"chat {self.deployment}",
+            attributes={
+                "gen_ai.operation.name": "chat",
+                "gen_ai.system": GEN_AI_SYSTEM,
+                "gen_ai.request.model": self.deployment,
+                "retail_rag.streaming": True,
+            },
+        )
+        try:
+            stream = self.chat_client.chat.completions.create(
+                model=self.deployment,
+                stream=True,
+                stream_options={"include_usage": True},
+                **kwargs,
+            )
+            content: list[str] = []
+            calls: dict[int, dict] = {}
+            finish = None
+            for chunk in stream:
+                if getattr(chunk, "usage", None):
+                    usage.add(chunk.usage)
+                    record_usage(s, chunk.usage)
+                if not chunk.choices:  # Azure sends filter results / usage without choices
+                    continue
+                choice = chunk.choices[0]
+                finish = choice.finish_reason or finish
+                delta = choice.delta
+                if delta is None:
+                    continue
+                if delta.content:
+                    content.append(delta.content)
+                    yield "token", delta.content
+                for tc in delta.tool_calls or []:
+                    c = calls.setdefault(tc.index, {"id": None, "name": "", "arguments": ""})
+                    c["id"] = tc.id or c["id"]
+                    if tc.function is not None:
+                        c["name"] += tc.function.name or ""
+                        c["arguments"] += tc.function.arguments or ""
+            if finish:
+                s.set_attribute("gen_ai.response.finish_reasons", [finish])
+            tool_calls = [
+                SimpleNamespace(
+                    id=c["id"], function=SimpleNamespace(name=c["name"], arguments=c["arguments"])
+                )
+                for _, c in sorted(calls.items())
+            ]
+            yield (
+                "message",
+                SimpleNamespace(
+                    content="".join(content) or None, tool_calls=tool_calls or None, finish=finish
+                ),
+            )
+        except Exception as exc:
+            s.record_exception(exc)
+            s.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            raise
+        finally:
+            s.end()
+
     # ---- tools -------------------------------------------------------------------------
     def _run_tool(self, name: str, args: dict) -> list[Document]:
         if name == "search_products":
@@ -218,28 +286,67 @@ class RetailAssistant:
         return (cited(before) - cited(after)) | (named(before) - named(after))
 
     # ---- main loop ---------------------------------------------------------------------
-    def ask(self, question: str, history: list[ChatTurn] | None = None) -> AgentAnswer:
-        with span(
-            "invoke_agent retail-assistant",
-            **{
-                "gen_ai.operation.name": "invoke_agent",
-                "gen_ai.system": GEN_AI_SYSTEM,
-                "gen_ai.request.model": self.deployment,
-                "retail_rag.prompt_version": self.prompt_version,
-                "retail_rag.question_chars": len(question),
-                "retail_rag.history_turns": len(history or []),
-            },
-        ) as s:
-            ans = self._ask(question, history)
-            s.set_attribute("gen_ai.usage.input_tokens", ans.usage.prompt_tokens)
-            s.set_attribute("gen_ai.usage.output_tokens", ans.usage.completion_tokens)
-            s.set_attribute("retail_rag.tool_calls", len(ans.tool_calls))
-            s.set_attribute("retail_rag.citations", len(ans.citations))
-            s.set_attribute("retail_rag.blocked", ans.blocked)
-            s.set_attribute("retail_rag.guard_edited", ans.guard_edited)
-            return ans
+    def _span_attributes(self, question: str, history: list[ChatTurn] | None) -> dict:
+        return {
+            "gen_ai.operation.name": "invoke_agent",
+            "gen_ai.system": GEN_AI_SYSTEM,
+            "gen_ai.request.model": self.deployment,
+            "retail_rag.prompt_version": self.prompt_version,
+            "retail_rag.question_chars": len(question),
+            "retail_rag.history_turns": len(history or []),
+        }
 
-    def _ask(self, question: str, history: list[ChatTurn] | None = None) -> AgentAnswer:
+    @staticmethod
+    def _finish_span(s, ans: AgentAnswer) -> None:
+        s.set_attribute("gen_ai.usage.input_tokens", ans.usage.prompt_tokens)
+        s.set_attribute("gen_ai.usage.output_tokens", ans.usage.completion_tokens)
+        s.set_attribute("retail_rag.tool_calls", len(ans.tool_calls))
+        s.set_attribute("retail_rag.citations", len(ans.citations))
+        s.set_attribute("retail_rag.blocked", ans.blocked)
+        s.set_attribute("retail_rag.guard_edited", ans.guard_edited)
+
+    def ask(self, question: str, history: list[ChatTurn] | None = None) -> AgentAnswer:
+        with span("invoke_agent retail-assistant", **self._span_attributes(question, history)) as s:
+            for event in self._events(question, history, stream_tokens=False):
+                if event["type"] == "done":
+                    self._finish_span(s, event["answer"])
+                    return event["answer"]
+        raise RuntimeError("agent finished without an answer")  # pragma: no cover
+
+    def ask_stream(self, question: str, history: list[ChatTurn] | None = None) -> Iterator[dict]:
+        """Events: status, tool_start, tool_end, token, blocked, done (with the AgentAnswer).
+
+        Tokens are only streamed when the answer guard is off: the guard checks the finished
+        answer, and streaming a draft would show the customer claims the guard then removes.
+        With the guard on, progress events stream and the checked answer arrives in `done`.
+        """
+        agent_span = tracer.start_span(
+            "invoke_agent retail-assistant", attributes=self._span_attributes(question, history)
+        )
+        events = self._events(question, history, stream_tokens=not self.answer_guard)
+        try:
+            while True:
+                with trace.use_span(agent_span, end_on_exit=False):
+                    try:
+                        event = next(events)
+                    except StopIteration:
+                        return
+                if event["type"] == "done":
+                    self._finish_span(agent_span, event["answer"])
+                yield event
+        except Exception as exc:
+            agent_span.record_exception(exc)
+            agent_span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+            raise
+        finally:
+            agent_span.end()
+
+    def _refusal(self, question: str) -> str:
+        return REFUSALS[guess_language(question)]
+
+    def _events(
+        self, question: str, history: list[ChatTurn] | None, stream_tokens: bool
+    ) -> Iterator[dict]:
         started = time.perf_counter()
         messages: list[dict] = [{"role": "system", "content": self.system_prompt}]
         messages += [t.model_dump() for t in (history or [])]
@@ -249,7 +356,6 @@ class RetailAssistant:
         traces: list[ToolCallTrace] = []
         seen: dict[str, Document] = {}
         answer = ""
-        blocked = False
         blocked_by = None
 
         if self.shield is not None:
@@ -262,30 +368,37 @@ class RetailAssistant:
                 shield_span.set_attribute("retail_rag.attack_detected", attack)
             if attack:
                 log.warning("prompt attack detected by Prompt Shields")
-                answer, blocked, blocked_by = (
-                    REFUSALS[guess_language(question)],
-                    True,
-                    "prompt_shield",
-                )
+                answer, blocked_by = self._refusal(question), "prompt_shield"
 
-        for step in range(0 if blocked else self.max_steps + 1):
+        for step in range(0 if blocked_by else self.max_steps + 1):
             force_answer = step == self.max_steps
+            kwargs = {
+                "messages": messages,
+                "tools": TOOLS,
+                "tool_choice": "none" if force_answer else "auto",
+                "temperature": 0,
+            }
             try:
-                resp = self._chat(
-                    messages=messages,
-                    tools=TOOLS,
-                    tool_choice="none" if force_answer else "auto",
-                    temperature=0,
-                )
+                if stream_tokens:
+                    msg = None
+                    for kind, payload in self._chat_stream(usage, **kwargs):
+                        if kind == "token":
+                            yield {"type": "token", "text": payload}
+                        else:
+                            msg = payload
+                    if msg.finish == "content_filter":  # the completion was filtered mid-stream
+                        raise _StreamFiltered()
+                else:
+                    resp = self._chat(**kwargs)
+                    usage.add(resp.usage)
+                    msg = resp.choices[0].message
             except Exception as exc:
-                if not is_content_filter_error(exc):
+                if not (isinstance(exc, _StreamFiltered) or is_content_filter_error(exc)):
                     raise
                 log.warning("blocked by Azure OpenAI content filter")
-                answer, blocked = REFUSALS[guess_language(question)], True
-                blocked_by = "content_filter"
+                answer, blocked_by = self._refusal(question), "content_filter"
+                yield {"type": "blocked", "by": blocked_by}
                 break
-            usage.add(resp.usage)
-            msg = resp.choices[0].message
             if not msg.tool_calls:
                 answer = msg.content or ""
                 break
@@ -308,6 +421,7 @@ class RetailAssistant:
                 }
             )
             for tc in msg.tool_calls:
+                yield {"type": "tool_start", "name": tc.function.name}
                 with span(
                     f"execute_tool {tc.function.name}",
                     **{
@@ -330,10 +444,16 @@ class RetailAssistant:
                         name=tc.function.name, arguments=args, result_ids=[d.id for d in docs]
                     )
                 )
+                yield {
+                    "type": "tool_end",
+                    "name": tc.function.name,
+                    "result_ids": [d.id for d in docs],
+                }
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": content})
 
         guarded = False
-        if self.answer_guard and not blocked and seen and answer:
+        if self.answer_guard and not blocked_by and seen and answer:
+            yield {"type": "status", "text": "checking answer against sources"}
             try:
                 checked = self._guard(answer, list(seen.values()), history or [], usage)
                 if dropped := self._dropped_products(answer, checked, seen):
@@ -354,24 +474,31 @@ class RetailAssistant:
         ]
         latency_ms = int((time.perf_counter() - started) * 1000)
         log.info(
-            "answered prompt_version=%s blocked=%s tools=%d tokens_in=%d tokens_out=%d "
+            "answered prompt_version=%s blocked_by=%s tools=%d tokens_in=%d tokens_out=%d "
             "latency_ms=%d",
             self.prompt_version,
-            blocked,
+            blocked_by,
             len(traces),
             usage.prompt_tokens,
             usage.completion_tokens,
             latency_ms,
         )
-        return AgentAnswer(
-            answer=answer,
-            citations=citations,
-            tool_calls=traces,
-            usage=usage,
-            prompt_version=self.prompt_version,
-            latency_ms=latency_ms,
-            blocked=blocked,
-            blocked_by=blocked_by,
-            guard_edited=guarded,
-            context_documents=list(seen.values()),
-        )
+        yield {
+            "type": "done",
+            "answer": AgentAnswer(
+                answer=answer,
+                citations=citations,
+                tool_calls=traces,
+                usage=usage,
+                prompt_version=self.prompt_version,
+                latency_ms=latency_ms,
+                blocked=blocked_by is not None,
+                blocked_by=blocked_by,
+                guard_edited=guarded,
+                context_documents=list(seen.values()),
+            ),
+        }
+
+
+class _StreamFiltered(Exception):
+    """A streamed completion ended with finish_reason=content_filter."""

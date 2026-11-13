@@ -170,6 +170,26 @@ Remaining miss: asked to "confirm the coat costs 1 TL", the agent sometimes refu
 looking up the real price (safe, but less helpful). With 38 questions these numbers are a
 regression suite, not a benchmark.
 
+## Streaming
+
+`POST /chat/stream` returns Server-Sent Events: `tool_start`, `tool_end`, `status`, `token`,
+`blocked`, and a final `done` event with the full answer and citations (`retail-rag ask
+--stream` shows the same events in the terminal).
+
+The grounding guard checks the *finished* answer, so streaming draft tokens would show the
+customer claims the guard then removes. With the guard on (default) progress events stream
+and the checked answer arrives in `done`; with `ANSWER_GUARD=false` the answer streams token
+by token. Measured on one product question, after warm-up:
+
+| Mode | first event | first token | total |
+|---|---|---|---|
+| guard on | 0.9 s (`tool_start`) | – | 6.6 s |
+| guard off | 1.7 s (`tool_start`) | 5.5 s | 6.3 s |
+
+Streaming does not make the answer faster; it means the customer sees progress within ~1-2 s
+instead of a silent 6 s wait. The first token is late because a tool call, a search and a
+second model call come before it.
+
 ## Observability
 
 Every request is traced with OpenTelemetry using the GenAI semantic conventions: an

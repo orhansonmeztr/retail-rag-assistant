@@ -33,10 +33,34 @@ def cmd_sync(args) -> None:
 
 
 def cmd_ask(args) -> None:
+    import time
+
     from .factory import build_assistant
 
-    ans = build_assistant(get_settings()).ask(args.question)
-    print(ans.answer)
+    s = get_settings()
+    if args.no_guard:
+        s = s.model_copy(update={"answer_guard": False})
+    assistant = build_assistant(s)
+    if not args.stream:
+        ans = assistant.ask(args.question)
+        print(ans.answer)
+    else:
+        started, first = time.perf_counter(), None
+        for ev in assistant.ask_stream(args.question):
+            if first is None:
+                first = time.perf_counter() - started
+            if ev["type"] == "token":
+                print(ev["text"], end="", flush=True)
+            elif ev["type"] in ("tool_start", "status", "blocked"):
+                print(
+                    f"[{ev['type']}: {ev.get('name') or ev.get('text') or ev.get('by')}]",
+                    flush=True,
+                )
+            elif ev["type"] == "done":
+                ans = ev["answer"]
+                if assistant.answer_guard or ans.blocked:  # answer was not token-streamed
+                    print(ans.answer)
+        print(f"\n[first event after {first * 1000:.0f} ms]")
     print("\nSources:", ", ".join(c.id for c in ans.citations) or "-")
     print(
         f"[prompt v{ans.prompt_version} | {ans.latency_ms} ms | "
@@ -103,6 +127,8 @@ def main(argv: list[str] | None = None) -> None:
 
     a = sub.add_parser("ask", help="ask the assistant a question")
     a.add_argument("question")
+    a.add_argument("--stream", action="store_true", help="print events/tokens as they arrive")
+    a.add_argument("--no-guard", action="store_true", help="disable the answer guard")
 
     r = sub.add_parser("eval-retrieval", help="recall@k / MRR on the golden set")
     r.add_argument("-k", type=int, default=5)

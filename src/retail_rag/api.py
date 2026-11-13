@@ -4,12 +4,14 @@ or Power Automate as a custom connector."""
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
+from fastapi.responses import StreamingResponse
 from fastapi.security import APIKeyHeader
 
 from . import __version__
@@ -119,3 +121,42 @@ def chat(
     except Exception as exc:
         log.exception("chat failed")
         raise HTTPException(status_code=502, detail="upstream model or search error") from exc
+
+
+@app.post(
+    "/chat/stream",
+    operation_id="AskAssistantStream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "content": {"text/event-stream": {}},
+            "description": "Server-sent events: status, tool_start, tool_end, token, "
+            "blocked, done (full answer with citations) or error",
+        },
+        401: {"description": "Missing or invalid API key"},
+        429: {"description": "Rate limit exceeded"},
+    },
+)
+def chat_stream(
+    req: ChatRequest,
+    assistant: Annotated[RetailAssistant, Depends(get_assistant)],
+    _client: Annotated[str, Depends(authorize)],
+) -> StreamingResponse:
+    def sse(event: dict) -> str:
+        return f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+    def events():
+        try:
+            for event in assistant.ask_stream(req.question, req.history):
+                if event["type"] == "done":
+                    event = {"type": "done", **event["answer"].model_dump()}
+                yield sse(event)
+        except Exception:  # headers are already sent; report the failure in-band
+            log.exception("chat stream failed")
+            yield sse({"type": "error", "detail": "upstream model or search error"})
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )

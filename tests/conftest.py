@@ -38,6 +38,44 @@ def completion(content=None, tool_calls=None, prompt_tokens=10, completion_token
     )
 
 
+def stream(content=None, tool_calls=None, finish=None, prompt_tokens=10, completion_tokens=5):
+    """Chunks shaped like Azure OpenAI streaming: a filter-results chunk without choices,
+    content split into pieces, tool-call deltas split across chunks, then a usage chunk."""
+    chunks = [SimpleNamespace(choices=[], usage=None)]
+
+    def chunk(delta, finish_reason=None):
+        return SimpleNamespace(
+            choices=[SimpleNamespace(delta=delta, finish_reason=finish_reason)], usage=None
+        )
+
+    for piece in (content or "").split(" "):
+        if piece:
+            chunks.append(chunk(SimpleNamespace(content=piece + " ", tool_calls=None)))
+    for i, (call_id, name, args) in enumerate(tool_calls or []):
+        raw = json.dumps(args)
+        first = SimpleNamespace(
+            index=i, id=call_id, function=SimpleNamespace(name=name, arguments=raw[:5])
+        )
+        rest = SimpleNamespace(
+            index=i, id=None, function=SimpleNamespace(name=None, arguments=raw[5:])
+        )
+        chunks.append(chunk(SimpleNamespace(content=None, tool_calls=[first])))
+        chunks.append(chunk(SimpleNamespace(content=None, tool_calls=[rest])))
+    chunks.append(
+        chunk(
+            SimpleNamespace(content=None, tool_calls=None),
+            finish or ("tool_calls" if tool_calls else "stop"),
+        )
+    )
+    chunks.append(
+        SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(prompt_tokens=prompt_tokens, completion_tokens=completion_tokens),
+        )
+    )
+    return chunks
+
+
 class ScriptedChatClient:
     """Fake Azure OpenAI client that replays scripted completions and records requests."""
 
@@ -48,4 +86,5 @@ class ScriptedChatClient:
 
     def _create(self, **kwargs):
         self.requests.append(kwargs)
-        return self._responses.pop(0)
+        resp = self._responses.pop(0)
+        return iter(resp) if kwargs.get("stream") else resp
