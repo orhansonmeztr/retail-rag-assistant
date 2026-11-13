@@ -18,7 +18,7 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 | Grounding | System prompt requires `[doc-id]` citations; ids never retrieved are dropped from the response |
 | Integration | FastAPI `/chat` endpoint; its OpenAPI spec imports into **Copilot Studio / Power Automate** as a custom connector |
 | LLMOps | Versioned prompt (`prompts/assistant.yaml`), per-request token usage + latency + prompt version, golden-set evaluation (recall@k, MRR), **LLM-as-judge** groundedness & relevance, CI quality gate |
-| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 28 offline unit tests with a scripted fake LLM, Docker, GitHub Actions, Bicep IaC, keyless Entra ID auth supported |
+| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 58 offline unit tests with a scripted fake LLM, Docker, GitHub Actions, Bicep IaC, keyless Entra ID auth supported |
 
 ## Architecture
 
@@ -53,7 +53,7 @@ infra/app.bicep      Content Safety, App Insights, Container Apps on existing Op
 ```bash
 uv venv && source .venv/bin/activate      # or python -m venv .venv
 uv pip install -e ".[dev]"
-pytest -q                                 # 28 tests, all offline
+pytest -q                                 # 58 tests, all offline
 retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
 ```
 

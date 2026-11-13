@@ -4,7 +4,7 @@ from conftest import ScriptedChatClient, completion
 from fastapi.testclient import TestClient
 
 from retail_rag.agent import RetailAssistant
-from retail_rag.api import app, get_api_keys, get_assistant, get_rate_limiter
+from retail_rag.api import app, assistant_or_503, get_api_keys, get_rate_limiter
 from retail_rag.security import PromptShield, RateLimiter, key_is_valid
 
 
@@ -35,7 +35,7 @@ def test_key_validation():
 def http(retriever):
     def make(keys=("secret",), per_minute=100):
         client = ScriptedChatClient([completion(content="ok")] * 10)
-        app.dependency_overrides[get_assistant] = lambda: RetailAssistant(
+        app.dependency_overrides[assistant_or_503] = lambda: RetailAssistant(
             client, "m", retriever, "system", "1"
         )
         app.dependency_overrides[get_api_keys] = lambda: tuple(keys)

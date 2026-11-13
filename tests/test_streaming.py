@@ -4,7 +4,7 @@ from conftest import ScriptedChatClient, completion, stream
 from fastapi.testclient import TestClient
 
 from retail_rag.agent import RetailAssistant
-from retail_rag.api import app, get_api_keys, get_assistant
+from retail_rag.api import app, assistant_or_503, get_api_keys
 
 
 def run(assistant, question="q"):
@@ -56,7 +56,7 @@ def test_stream_filtered_midway_is_reported_as_blocked(retriever):
 
 def test_sse_endpoint(retriever):
     client = ScriptedChatClient([stream(content="Merhaba dünya")])
-    app.dependency_overrides[get_assistant] = lambda: RetailAssistant(
+    app.dependency_overrides[assistant_or_503] = lambda: RetailAssistant(
         client, "m", retriever, "s", "1"
     )
     app.dependency_overrides[get_api_keys] = lambda: ()

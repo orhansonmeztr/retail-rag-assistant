@@ -6,7 +6,7 @@ from conftest import ScriptedChatClient
 from fastapi.testclient import TestClient
 
 from retail_rag.agent import RetailAssistant
-from retail_rag.api import app, get_api_keys, get_assistant
+from retail_rag.api import app, assistant_or_503, get_api_keys
 from retail_rag.search_backend import AzureSearchBackend
 
 _req = httpx.Request("POST", "https://x")
@@ -26,7 +26,7 @@ def test_upstream_errors_map_to_retry_aware_status(retriever, error, status):
         def _create(self, **kwargs):
             raise error
 
-    app.dependency_overrides[get_assistant] = lambda: RetailAssistant(
+    app.dependency_overrides[assistant_or_503] = lambda: RetailAssistant(
         Failing([]), "m", retriever, "s", "1"
     )
     app.dependency_overrides[get_api_keys] = lambda: ()

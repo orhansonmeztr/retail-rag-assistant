@@ -38,6 +38,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t retail-rag-assistant:${{ github.sha }} .
+      # start the image without dev dependencies and Azure settings: catches missing runtime deps
+      - name: Smoke test the container
+        run: |
+          docker run -d --name api -p 8000:8000 -e WARMUP_ON_STARTUP=false \
+            retail-rag-assistant:${{ github.sha }}
+          for i in $(seq 1 30); do curl -sf localhost:8000/health && exit 0; sleep 1; done
+          docker logs api; exit 1
 
   # Optional: full LLM-judged evaluation against Azure, only when secrets are configured.
   eval-azure:

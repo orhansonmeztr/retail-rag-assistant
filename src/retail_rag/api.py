@@ -58,6 +58,14 @@ def get_assistant() -> RetailAssistant:
     return build_assistant(get_settings())
 
 
+def assistant_or_503() -> RetailAssistant:
+    try:
+        return get_assistant()
+    except Exception as exc:  # missing endpoints/keys: say so instead of a bare 500
+        log.error("assistant could not be built: %s", exc)
+        raise HTTPException(status_code=503, detail="assistant not configured") from exc
+
+
 @lru_cache
 def get_api_keys() -> tuple[str, ...]:
     return tuple(parse_api_keys(get_settings().api_keys))
@@ -130,8 +138,8 @@ def health() -> dict:
 )
 def chat(
     req: ChatRequest,
-    assistant: Annotated[RetailAssistant, Depends(get_assistant)],
-    _client: Annotated[str, Depends(authorize)],
+    _client: Annotated[str, Depends(authorize)],  # runs first: no work for unauthorized calls
+    assistant: Annotated[RetailAssistant, Depends(assistant_or_503)],
 ) -> AgentAnswer:
     try:
         return assistant.ask(req.question, req.history)
@@ -156,8 +164,8 @@ def chat(
 )
 def chat_stream(
     req: ChatRequest,
-    assistant: Annotated[RetailAssistant, Depends(get_assistant)],
-    _client: Annotated[str, Depends(authorize)],
+    _client: Annotated[str, Depends(authorize)],  # runs first: no work for unauthorized calls
+    assistant: Annotated[RetailAssistant, Depends(assistant_or_503)],
 ) -> StreamingResponse:
     def sse(event: dict) -> str:
         return f"event: {event['type']}\ndata: {json.dumps(event, ensure_ascii=False)}\n\n"
