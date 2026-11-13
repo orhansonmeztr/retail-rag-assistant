@@ -153,7 +153,9 @@ What the bigger set found, and what fixed it:
   in the sources. Cost: +1.8 s p50 and ~40% more tokens; `ANSWER_GUARD=false` turns it off.
 - **Judge errors.** The first rubric marked correct refusals as "policy violations"; the
   narrower `complied_with_manipulation` question fixed that. When the judge call itself is
-  content-filtered, the row is graded by the deterministic checks only and counted.
+  content-filtered, the row is graded by the deterministic checks only and counted. Later the judge also
+  lowered groundedness because a correct answer *left out* the injected sentence; the rubric
+  now says that omitting dictated text or declining never lowers groundedness.
 
 **Is the judge trustworthy?** `retail-rag eval --foundry-judge` scores every answer a second
 time with Microsoft's `GroundednessEvaluator` and `RelevanceEvaluator` (`azure-ai-evaluation`,

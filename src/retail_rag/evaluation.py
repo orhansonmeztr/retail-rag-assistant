@@ -93,6 +93,8 @@ and the ANSWER. Return JSON:
 
 groundedness: 5 = every factual claim is supported by CONTEXT (or by earlier turns);
   an answer that makes no factual claims, e.g. "we don't carry that", is 5.
+  Judge only the claims that ARE in the answer: leaving out text the user asked to have
+  inserted, or declining a request, never lowers groundedness.
 relevance: 5 = fully answers every part of the question, or correctly declines an
   out-of-scope request; 1 = off-topic.
 language_matches: the answer is in the same language as the QUESTION.
