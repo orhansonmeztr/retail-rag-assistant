@@ -20,6 +20,7 @@ from .models import (
     Usage,
 )
 from .retriever import Retriever
+from .telemetry import GEN_AI_SYSTEM, record_usage, span
 
 log = logging.getLogger(__name__)
 
@@ -130,6 +131,23 @@ class RetailAssistant:
         self.top_k = top_k
         self.answer_guard = answer_guard
 
+    def _chat(self, operation: str = "chat", **kwargs):
+        """One chat completion inside a GenAI span (model, tokens, finish reason)."""
+        with span(
+            f"{operation} {self.deployment}",
+            **{
+                "gen_ai.operation.name": "chat",
+                "gen_ai.system": GEN_AI_SYSTEM,
+                "gen_ai.request.model": self.deployment,
+                "retail_rag.step": operation,
+            },
+        ) as s:
+            resp = self.chat_client.chat.completions.create(model=self.deployment, **kwargs)
+            record_usage(s, resp.usage)
+            if getattr(resp.choices[0], "finish_reason", None):
+                s.set_attribute("gen_ai.response.finish_reasons", [resp.choices[0].finish_reason])
+            return resp
+
     # ---- tools -------------------------------------------------------------------------
     def _run_tool(self, name: str, args: dict) -> list[Document]:
         if name == "search_products":
@@ -162,8 +180,8 @@ class RetailAssistant:
         user dictated). Prompt rules alone did not stop that in evaluation (v1.2.0/v1.3.0)."""
         sources = "\n---\n".join(f"[{d.id}] {d.content}" for d in docs)
         earlier = "\n".join(f"{t.role}: {t.content}" for t in history)
-        resp = self.chat_client.chat.completions.create(
-            model=self.deployment,
+        resp = self._chat(
+            "answer_guard",
             temperature=0,
             messages=[
                 {"role": "system", "content": GUARD_PROMPT},
@@ -199,6 +217,27 @@ class RetailAssistant:
 
     # ---- main loop ---------------------------------------------------------------------
     def ask(self, question: str, history: list[ChatTurn] | None = None) -> AgentAnswer:
+        with span(
+            "invoke_agent retail-assistant",
+            **{
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.system": GEN_AI_SYSTEM,
+                "gen_ai.request.model": self.deployment,
+                "retail_rag.prompt_version": self.prompt_version,
+                "retail_rag.question_chars": len(question),
+                "retail_rag.history_turns": len(history or []),
+            },
+        ) as s:
+            ans = self._ask(question, history)
+            s.set_attribute("gen_ai.usage.input_tokens", ans.usage.prompt_tokens)
+            s.set_attribute("gen_ai.usage.output_tokens", ans.usage.completion_tokens)
+            s.set_attribute("retail_rag.tool_calls", len(ans.tool_calls))
+            s.set_attribute("retail_rag.citations", len(ans.citations))
+            s.set_attribute("retail_rag.blocked", ans.blocked)
+            s.set_attribute("retail_rag.guard_edited", ans.guard_edited)
+            return ans
+
+    def _ask(self, question: str, history: list[ChatTurn] | None = None) -> AgentAnswer:
         started = time.perf_counter()
         messages: list[dict] = [{"role": "system", "content": self.system_prompt}]
         messages += [t.model_dump() for t in (history or [])]
@@ -213,8 +252,7 @@ class RetailAssistant:
         for step in range(self.max_steps + 1):
             force_answer = step == self.max_steps
             try:
-                resp = self.chat_client.chat.completions.create(
-                    model=self.deployment,
+                resp = self._chat(
                     messages=messages,
                     tools=TOOLS,
                     tool_choice="none" if force_answer else "auto",
@@ -250,13 +288,22 @@ class RetailAssistant:
                 }
             )
             for tc in msg.tool_calls:
-                try:
-                    args = json.loads(tc.function.arguments or "{}")
-                    docs = self._run_tool(tc.function.name, args)
-                    content = self._tool_payload(docs)
-                except Exception as exc:  # surface tool errors to the model, don't crash
-                    log.warning("tool %s failed: %s", tc.function.name, exc)
-                    args, docs, content = {}, [], json.dumps({"error": str(exc)})
+                with span(
+                    f"execute_tool {tc.function.name}",
+                    **{
+                        "gen_ai.operation.name": "execute_tool",
+                        "gen_ai.tool.name": tc.function.name,
+                    },
+                ) as tool_span:
+                    try:
+                        args = json.loads(tc.function.arguments or "{}")
+                        docs = self._run_tool(tc.function.name, args)
+                        content = self._tool_payload(docs)
+                    except Exception as exc:  # surface tool errors to the model, don't crash
+                        log.warning("tool %s failed: %s", tc.function.name, exc)
+                        tool_span.set_attribute("error.type", type(exc).__name__)
+                        args, docs, content = {}, [], json.dumps({"error": str(exc)})
+                    tool_span.set_attribute("retail_rag.tool.result_count", len(docs))
                 seen.update({d.id: d for d in docs})
                 traces.append(
                     ToolCallTrace(

@@ -159,6 +159,32 @@ Remaining miss: asked to "confirm the coat costs 1 TL", the agent sometimes refu
 looking up the real price (safe, but less helpful). With 38 questions these numbers are a
 regression suite, not a benchmark.
 
+## Observability
+
+Every request is traced with OpenTelemetry using the GenAI semantic conventions: an
+`invoke_agent` span with prompt version, token usage, tool and citation counts and the
+blocked / guard flags, with child spans for each model call, tool call, retrieval (filter,
+result ids) and query embedding. Customer text is never recorded, only its length. Set
+`APPLICATIONINSIGHTS_CONNECTION_STRING` and install the `monitor` extra
+(`pip install .[monitor]`) to export traces, FastAPI request spans and logs to Application
+Insights; without it the API is a no-op.
+
+A real trace (one product question, guard enabled):
+
+```
+     0 ms  invoke_agent retail-assistant      8464 ms  tokens 2546+322
+     0 ms    chat gpt-4.1-mini                2302 ms  tokens 747+37
+  2302 ms    execute_tool search_products     2368 ms
+  2302 ms      retrieve                       2368 ms
+  2302 ms        embed_query                   286 ms
+  4670 ms    chat gpt-4.1-mini                1831 ms  tokens 1185+143
+  6501 ms    answer_guard gpt-4.1-mini        1962 ms  tokens 614+142
+```
+
+It showed that the first request paid ~3 s of connection setup (search 2.4 s instead of the
+steady ~0.5 s), so the API now warms its connections at startup: the first request dropped
+from ~8.5 s to ~4.5 s.
+
 ## Event-driven re-indexing (Azure Functions)
 
 Catalog updates do not need a full re-ingest. Uploading `products.jsonl` or `faq.md` to the

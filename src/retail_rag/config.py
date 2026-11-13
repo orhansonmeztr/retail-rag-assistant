@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     max_agent_steps: int = 4
     # extra LLM call that strips claims not supported by the retrieved sources
     answer_guard: bool = True
+    warmup_on_startup: bool = True
 
     data_dir: Path = PROJECT_ROOT / "data"
     prompt_path: Path = PROJECT_ROOT / "prompts" / "assistant.yaml"

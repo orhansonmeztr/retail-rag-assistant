@@ -14,10 +14,18 @@ dependencies = [
     "uvicorn[standard]>=0.30",
     "pyyaml>=6.0",
     "numpy>=1.26",
+    "opentelemetry-api>=1.25",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "httpx>=0.27", "ruff>=0.6", "azure-functions>=1.21"]
+dev = [
+    "pytest>=8",
+    "httpx>=0.27",
+    "ruff>=0.6",
+    "azure-functions>=1.21",
+    "opentelemetry-sdk>=1.25",
+]
+monitor = ["azure-monitor-opentelemetry>=1.6"]
 
 [project.scripts]
 retail-rag = "retail_rag.cli:main"
