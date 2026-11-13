@@ -1,0 +1,9 @@
+azure-functions>=1.21
+# the retail_rag package is copied next to this file by build.sh before publishing
+openai>=1.54
+azure-search-documents>=11.6.0
+azure-identity>=1.19
+pydantic>=2.7
+pydantic-settings>=2.4
+pyyaml>=6.0
+numpy>=1.26

@@ -6,3 +6,6 @@ __pycache__/
 .ruff_cache/
 dist/
 reports/
+functions/retail_rag/
+functions/local.settings.json
+functions/.python_packages/

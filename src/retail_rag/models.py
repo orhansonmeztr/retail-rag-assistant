@@ -18,6 +18,8 @@ class Document(BaseModel):
     gender: str | None = None
     price: float | None = None
     url: str | None = None
+    # set by incremental sync; lets an upload skip documents that did not change
+    content_hash: str | None = None
 
 
 class SearchResult(BaseModel):

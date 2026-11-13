@@ -27,6 +27,12 @@ class SearchBackend(Protocol):
         filter: SearchFilter | None = None,
     ) -> list[SearchResult]: ...
 
+    def list_hashes(self, source: str) -> dict[str, str | None]:
+        """id -> content_hash of every indexed document of one source."""
+        ...
+
+    def delete(self, ids: list[str]) -> None: ...
+
 
 def reciprocal_rank_fusion(rankings: list[list[str]], k: int = 60) -> dict[str, float]:
     """Same fusion Azure AI Search uses for hybrid queries."""
@@ -49,6 +55,14 @@ class InMemoryBackend:
             self._docs[doc.id] = doc
             v = np.asarray(vec, dtype=np.float32)
             self._vectors[doc.id] = v / (np.linalg.norm(v) or 1.0)
+
+    def list_hashes(self, source: str) -> dict[str, str | None]:
+        return {i: d.content_hash for i, d in self._docs.items() if d.source == source}
+
+    def delete(self, ids: list[str]) -> None:
+        for i in ids:
+            self._docs.pop(i, None)
+            self._vectors.pop(i, None)
 
     def search(self, query, vector, top_k=5, filter=None) -> list[SearchResult]:
         candidates = [d for d in self._docs.values() if filter is None or filter.matches(d)]
@@ -130,6 +144,7 @@ class AzureSearchBackend:
                 name="price", type=SearchFieldDataType.Double, filterable=True, sortable=True
             ),
             SimpleField(name="url", type=SearchFieldDataType.String),
+            SimpleField(name="content_hash", type=SearchFieldDataType.String, filterable=True),
             SearchField(
                 name=VECTOR_FIELD,
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
@@ -173,6 +188,19 @@ class AzureSearchBackend:
             failed = [r.key for r in results if not r.succeeded]
             if failed:
                 raise RuntimeError(f"failed to index: {failed}")
+
+    def list_hashes(self, source: str) -> dict[str, str | None]:
+        results = self.client.search(
+            search_text="*",
+            filter=SearchFilter(source=source).to_odata(),
+            select=["id", "content_hash"],
+            top=1000,  # one page is plenty for this demo catalog
+        )
+        return {r["id"]: r.get("content_hash") for r in results}
+
+    def delete(self, ids: list[str]) -> None:
+        if ids:
+            self.client.delete_documents([{"id": i} for i in ids])
 
     def search(self, query, vector, top_k=5, filter=None) -> list[SearchResult]:
         from azure.search.documents.models import VectorizedQuery

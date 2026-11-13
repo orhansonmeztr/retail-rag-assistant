@@ -10,26 +10,26 @@ from dataclasses import asdict
 from pathlib import Path
 
 from .config import get_settings
-from .documents import load_corpus
 
 
 def cmd_ingest(_args) -> None:
-    from .clients import make_openai_client, search_credential
-    from .embeddings import AzureOpenAIEmbedder
-    from .retriever import Retriever
-    from .search_backend import AzureSearchBackend
+    """Create/update the index schema, then sync both catalog files incrementally."""
+    from .sync import CATALOG_FILES, build_sync_target, handle_catalog_blob
 
     s = get_settings()
-    docs = load_corpus(s.data_dir)
-    backend = AzureSearchBackend(
-        s.azure_search_endpoint, s.azure_search_index, search_credential(s), s.embedding_dimensions
-    )
-    backend.ensure_index()
-    embedder = AzureOpenAIEmbedder(
-        make_openai_client(s), s.azure_openai_embedding_deployment, s.embedding_dimensions
-    )
-    n = Retriever(embedder, backend).index(docs)
-    print(f"indexed {n} documents into '{s.azure_search_index}'")
+    retriever = build_sync_target(s)
+    for name in CATALOG_FILES:
+        text = (s.data_dir / name).read_text(encoding="utf-8")
+        print(handle_catalog_blob(name, text, retriever))
+
+
+def cmd_sync(args) -> None:
+    """Sync one catalog file, exactly what the Azure Function does on upload."""
+    from .sync import build_sync_target, handle_catalog_blob
+
+    path = Path(args.path)
+    retriever = build_sync_target(get_settings())
+    print(handle_catalog_blob(path.name, path.read_text(encoding="utf-8"), retriever))
 
 
 def cmd_ask(args) -> None:
@@ -86,7 +86,10 @@ def main(argv: list[str] | None = None) -> None:
     p = argparse.ArgumentParser(prog="retail-rag")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("ingest", help="create the Azure AI Search index and upload documents")
+    sub.add_parser("ingest", help="create/update the index and sync all catalog files")
+
+    sy = sub.add_parser("sync", help="incrementally sync one file (products.jsonl or faq.md)")
+    sy.add_argument("path")
 
     a = sub.add_parser("ask", help="ask the assistant a question")
     a.add_argument("question")
@@ -112,9 +115,13 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--min-pass-rate", type=float, default=None)
 
     args = p.parse_args(argv)
-    {"ingest": cmd_ingest, "ask": cmd_ask, "eval-retrieval": cmd_eval_retrieval, "eval": cmd_eval}[
-        args.cmd
-    ](args)
+    {
+        "ingest": cmd_ingest,
+        "sync": cmd_sync,
+        "ask": cmd_ask,
+        "eval-retrieval": cmd_eval_retrieval,
+        "eval": cmd_eval,
+    }[args.cmd](args)
 
 
 if __name__ == "__main__":

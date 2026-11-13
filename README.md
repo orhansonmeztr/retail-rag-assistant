@@ -159,6 +159,22 @@ Remaining miss: asked to "confirm the coat costs 1 TL", the agent sometimes refu
 looking up the real price (safe, but less helpful). With 38 questions these numbers are a
 regression suite, not a benchmark.
 
+## Event-driven re-indexing (Azure Functions)
+
+Catalog updates do not need a full re-ingest. Uploading `products.jsonl` or `faq.md` to the
+`catalog` blob container fires an Event Grid based blob trigger (`functions/function_app.py`).
+Each indexed document stores a content hash, so the sync re-embeds only new or changed
+documents and deletes the ones that disappeared from the file:
+
+```
+first ingest            SyncReport(source='product', added=0, updated=25, deleted=0, unchanged=0)
+same file again         SyncReport(source='product', added=0, updated=0,  deleted=0, unchanged=25)
+one price changed       SyncReport(source='product', added=0, updated=1,  deleted=0, unchanged=24)
+```
+
+(output of runs against the Azure index). `retail-rag sync <file>` runs the same code
+locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
+
 ## Copilot Studio integration
 
 `/openapi.json` exposes a single `AskAssistant` operation. In Copilot Studio: *Tools → Add a tool →

@@ -17,8 +17,13 @@ def slugify(text: str) -> str:
 
 
 def load_products(path: Path) -> list[Document]:
+    return parse_products(path.read_text(encoding="utf-8"))
+
+
+def parse_products(text: str) -> list[Document]:
+    """JSON Lines catalog -> one document per product."""
     docs: list[Document] = []
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in text.splitlines():
         if not line.strip():
             continue
         p = json.loads(line)
@@ -58,7 +63,11 @@ def chunk_text(text: str, max_chars: int = 1200, overlap_paragraphs: int = 1) ->
 
 
 def load_faq(path: Path, max_chars: int = 1200) -> list[Document]:
-    text = path.read_text(encoding="utf-8")
+    return parse_faq(path.read_text(encoding="utf-8"), max_chars)
+
+
+def parse_faq(text: str, max_chars: int = 1200) -> list[Document]:
+    """Markdown FAQ (one `## ` section per topic) -> chunked documents."""
     sections = re.split(r"^## +", text, flags=re.MULTILINE)[1:]  # drop the H1 preamble
     docs: list[Document] = []
     for section in sections:
