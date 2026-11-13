@@ -121,6 +121,7 @@ class RetailAssistant:
         max_steps: int = 4,
         top_k: int = 5,
         answer_guard: bool = False,
+        shield=None,
     ):
         self.chat_client = chat_client
         self.deployment = deployment
@@ -130,6 +131,7 @@ class RetailAssistant:
         self.max_steps = max_steps
         self.top_k = top_k
         self.answer_guard = answer_guard
+        self.shield = shield  # optional PromptShield-like object
 
     def _chat(self, operation: str = "chat", **kwargs):
         """One chat completion inside a GenAI span (model, tokens, finish reason)."""
@@ -248,8 +250,25 @@ class RetailAssistant:
         seen: dict[str, Document] = {}
         answer = ""
         blocked = False
+        blocked_by = None
 
-        for step in range(self.max_steps + 1):
+        if self.shield is not None:
+            with span("prompt_shield") as shield_span:
+                try:
+                    attack = self.shield.attack_detected(question)
+                except Exception as exc:  # fail open: availability over a second safety net
+                    log.warning("prompt shield unavailable: %s", exc)
+                    attack = False
+                shield_span.set_attribute("retail_rag.attack_detected", attack)
+            if attack:
+                log.warning("prompt attack detected by Prompt Shields")
+                answer, blocked, blocked_by = (
+                    REFUSALS[guess_language(question)],
+                    True,
+                    "prompt_shield",
+                )
+
+        for step in range(0 if blocked else self.max_steps + 1):
             force_answer = step == self.max_steps
             try:
                 resp = self._chat(
@@ -263,6 +282,7 @@ class RetailAssistant:
                     raise
                 log.warning("blocked by Azure OpenAI content filter")
                 answer, blocked = REFUSALS[guess_language(question)], True
+                blocked_by = "content_filter"
                 break
             usage.add(resp.usage)
             msg = resp.choices[0].message
@@ -351,6 +371,7 @@ class RetailAssistant:
             prompt_version=self.prompt_version,
             latency_ms=latency_ms,
             blocked=blocked,
+            blocked_by=blocked_by,
             guard_edited=guarded,
             context_documents=list(seen.values()),
         )

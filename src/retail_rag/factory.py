@@ -40,6 +40,14 @@ def build_retriever(settings: Settings, openai_client=None) -> Retriever:
     return Retriever(embedder, backend, settings.top_k)
 
 
+def build_shield(settings: Settings):
+    if not settings.content_safety_endpoint:
+        return None
+    from .security import PromptShield
+
+    return PromptShield(settings.content_safety_endpoint, settings.content_safety_api_key or "")
+
+
 def build_assistant(settings: Settings) -> RetailAssistant:
     client = make_openai_client(settings)
     system, version = load_prompt(settings.prompt_path)
@@ -52,4 +60,5 @@ def build_assistant(settings: Settings) -> RetailAssistant:
         max_steps=settings.max_agent_steps,
         top_k=settings.top_k,
         answer_guard=settings.answer_guard,
+        shield=build_shield(settings),
     )

@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     answer_guard: bool = True
     warmup_on_startup: bool = True
 
+    # comma-separated keys accepted in X-API-Key; empty disables auth (local development only)
+    api_keys: str = ""
+    rate_limit_per_minute: int = 30
+    # Azure AI Content Safety Prompt Shields; disabled when the endpoint is empty
+    content_safety_endpoint: str = ""
+    content_safety_api_key: str | None = None
+
     data_dir: Path = PROJECT_ROOT / "data"
     prompt_path: Path = PROJECT_ROOT / "prompts" / "assistant.yaml"
     golden_path: Path = PROJECT_ROOT / "eval" / "golden.jsonl"

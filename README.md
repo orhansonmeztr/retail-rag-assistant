@@ -185,6 +185,19 @@ It showed that the first request paid ~3 s of connection setup (search 2.4 s ins
 steady ~0.5 s), so the API now warms its connections at startup: the first request dropped
 from ~8.5 s to ~4.5 s.
 
+## Security
+
+Layered, because the evaluation showed that no single layer catches everything:
+
+| Layer | What it does |
+|---|---|
+| API key (`X-API-Key`) | `/chat` requires one of the keys in `API_KEYS`, compared in constant time; `/health` stays open. Empty `API_KEYS` disables auth for local development and logs a warning. |
+| Rate limit | Sliding one-minute window per key (`RATE_LIMIT_PER_MINUTE`), HTTP 429 with `Retry-After`. In-process, so per replica; a gateway such as API Management gives a global limit. |
+| Prompt Shields | Optional Azure AI Content Safety check of the user message before any model call; a detected jailbreak gets a refusal with `blocked_by: "prompt_shield"`. Fails open if the service is down. |
+| Azure OpenAI content filter | Built-in; a filtered request returns a refusal with `blocked_by: "content_filter"` instead of an error. |
+| System prompt rules | Refuse to reveal instructions, grant discounts or confirm false prices. |
+| Grounding guard | Removes claims the retrieved sources don't support (stopped the injected "all orders are free today" sentence that got past the prompt rules). |
+
 ## Event-driven re-indexing (Azure Functions)
 
 Catalog updates do not need a full re-ingest. Uploading `products.jsonl` or `faq.md` to the

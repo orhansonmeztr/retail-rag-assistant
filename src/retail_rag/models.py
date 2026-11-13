@@ -103,7 +103,8 @@ class AgentAnswer(BaseModel):
     usage: Usage
     prompt_version: str
     latency_ms: int
-    blocked: bool = False  # True when the content filter rejected the request
+    blocked: bool = False  # True when the request was refused before answering
+    blocked_by: str | None = None  # "prompt_shield" or "content_filter"
     guard_edited: bool = False  # True when the answer guard removed unsupported claims
     # documents the tools returned; used by evaluation, not sent to API clients
     context_documents: list[Document] = Field(default_factory=list, exclude=True)

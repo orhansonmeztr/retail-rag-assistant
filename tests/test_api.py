@@ -2,7 +2,7 @@ from conftest import ScriptedChatClient, completion
 from fastapi.testclient import TestClient
 
 from retail_rag.agent import RetailAssistant
-from retail_rag.api import app, get_assistant
+from retail_rag.api import app, get_api_keys, get_assistant
 
 
 def test_chat_endpoint(retriever):
@@ -10,6 +10,7 @@ def test_chat_endpoint(retriever):
     app.dependency_overrides[get_assistant] = lambda: RetailAssistant(
         client, "gpt-test", retriever, "system", "1.0.0"
     )
+    app.dependency_overrides[get_api_keys] = lambda: ()  # auth tested in test_security.py
     try:
         http = TestClient(app)
         assert http.get("/health").json()["status"] == "ok"
