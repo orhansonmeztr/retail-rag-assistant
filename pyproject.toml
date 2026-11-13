@@ -26,6 +26,7 @@ dev = [
     "opentelemetry-sdk>=1.25",
 ]
 monitor = ["azure-monitor-opentelemetry>=1.6"]
+foundry-eval = ["azure-ai-evaluation>=1.0"]
 
 [project.scripts]
 retail-rag = "retail_rag.cli:main"

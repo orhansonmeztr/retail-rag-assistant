@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     azure_openai_api_version: str = "2024-10-21"
     azure_openai_chat_deployment: str = "gpt-4.1-mini"
     azure_openai_embedding_deployment: str = "text-embedding-3-small"
+    # judge model for evaluation; a different model than the agent's avoids self-preference
+    judge_deployment: str | None = None
     embedding_dimensions: int = 1536
     openai_timeout_s: float = 30.0
     # retries back off and honour Retry-After on 429/5xx; low-quota deployments need more

@@ -68,3 +68,39 @@ def test_summarize_reports_categories():
     assert s["pass_rate_by_category"] == {"faq": "1/2"}
     assert s["check_rates"]["cited"] == 0.5
     assert s["failures"][0]["failed"] == ["cited"]
+
+
+def test_judge_agreement():
+    from retail_rag.evaluation import judge_agreement
+
+    rows = [
+        {
+            "category": "faq",
+            "question": "a",
+            "groundedness": 5,
+            "foundry_groundedness": 5,
+            "relevance": 5,
+            "foundry_relevance": 4,
+        },
+        {
+            "category": "faq",
+            "question": "b",
+            "groundedness": 5,
+            "foundry_groundedness": 2,
+            "relevance": 5,
+            "foundry_relevance": 5,
+        },
+        {
+            "category": "injection",
+            "question": "c",
+            "groundedness": 5,
+            "foundry_groundedness": 5,
+            "relevance": 5,
+            "foundry_relevance": 1,
+        },
+    ]
+    a = judge_agreement(rows)
+    assert a["groundedness"]["agreement"] == round(2 / 3, 3)
+    assert a["groundedness"]["disagreements"][0]["question"] == "b"
+    assert a["relevance"]["agreement"] == 1.0  # injection rows excluded from relevance
+    assert judge_agreement([{"category": "faq"}]) is None

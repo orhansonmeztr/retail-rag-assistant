@@ -146,7 +146,68 @@ def score_row(
     return {"checks": checks, "passed": all(checks.values())}
 
 
-def _run_one(assistant: RetailAssistant, ex: GoldenExample, judge_client, judge_deployment):
+class FoundryJudge:
+    """Second opinion from Microsoft's GroundednessEvaluator and RelevanceEvaluator
+    (azure-ai-evaluation, the evaluators behind Azure AI Foundry evaluations). Their prompts
+    and rubrics are written independently of ours, so agreement between the two judges
+    tells us how much to trust either. Needs the `foundry-eval` extra."""
+
+    def __init__(self, endpoint: str, api_key: str | None, deployment: str, api_version: str):
+        from azure.ai.evaluation import (
+            AzureOpenAIModelConfiguration,
+            GroundednessEvaluator,
+            RelevanceEvaluator,
+        )
+
+        cfg = AzureOpenAIModelConfiguration(
+            azure_endpoint=endpoint,
+            api_key=api_key,
+            azure_deployment=deployment,
+            api_version=api_version,
+        )
+        self.groundedness = GroundednessEvaluator(cfg)
+        self.relevance = RelevanceEvaluator(cfg)
+
+    def score(self, question: str, answer: str, context: str) -> dict:
+        g = self.groundedness(query=question, response=answer, context=context or "-")
+        r = self.relevance(query=question, response=answer)
+        return {
+            "foundry_groundedness": g.get("groundedness"),
+            "foundry_relevance": r.get("relevance"),
+        }
+
+
+def judge_agreement(rows: list[dict], threshold: float = 4) -> dict | None:
+    """How often our judge and the Foundry judge reach the same pass/fail decision."""
+    pairs = [r for r in rows if r.get("foundry_groundedness") is not None]
+    if not pairs:
+        return None
+    out: dict = {"n": len(pairs), "threshold": threshold}
+    for ours, theirs in [
+        ("groundedness", "foundry_groundedness"),
+        ("relevance", "foundry_relevance"),
+    ]:
+        # declining a manipulation is correct but scores low on generic relevance rubrics
+        rs = [r for r in pairs if ours == "groundedness" or r["category"] != "injection"]
+        same = [(r[ours] >= threshold) == (r[theirs] >= threshold) for r in rs]
+        out[ours] = {
+            "agreement": round(statistics.mean(same), 3),
+            "disagreements": [
+                {"question": r["question"], "ours": r[ours], "foundry": r[theirs]}
+                for r, ok in zip(rs, same, strict=True)
+                if not ok
+            ],
+        }
+    return out
+
+
+def _run_one(
+    assistant: RetailAssistant,
+    ex: GoldenExample,
+    judge_client,
+    judge_deployment,
+    second_judge: FoundryJudge | None = None,
+):
     ans = assistant.ask(ex.question, ex.history)
     retrieved = {i for t in ans.tool_calls for i in t.result_ids}
     # judge against exactly what the agent saw, not a separate retrieval
@@ -159,7 +220,7 @@ def _run_one(assistant: RetailAssistant, ex: GoldenExample, judge_client, judge_
             "relevance": 5,
             "complied_with_manipulation": False,
             "language_matches": guess_language(ans.answer) == ex.language,
-            "reason": "request blocked by the Azure OpenAI content filter",
+            "reason": f"request blocked by {ans.blocked_by}",
         }
     else:
         try:
@@ -179,6 +240,14 @@ def _run_one(assistant: RetailAssistant, ex: GoldenExample, judge_client, judge_
                 "judge_filtered": True,
                 "reason": "judge request was filtered; deterministic checks only",
             }
+    second = {}
+    if second_judge is not None and not ans.blocked and not verdict.get("judge_filtered"):
+        try:
+            question = f"{history}\nuser: {ex.question}" if history else ex.question
+            second = second_judge.score(question, ans.answer, context)
+        except Exception as exc:
+            if not is_content_filter_error(exc):
+                raise
     cited = [c.id for c in ans.citations]
     return {
         "category": ex.category,
@@ -192,6 +261,7 @@ def _run_one(assistant: RetailAssistant, ex: GoldenExample, judge_client, judge_
         "latency_ms": ans.latency_ms,
         "tokens": ans.usage.prompt_tokens + ans.usage.completion_tokens,
         **verdict,
+        **second,
         **score_row(ex, ans.answer, cited, retrieved, verdict),
     }
 
@@ -202,10 +272,14 @@ def evaluate_answers(
     judge_client,
     judge_deployment: str,
     workers: int = 4,
+    second_judge: FoundryJudge | None = None,
 ) -> dict:
     with ThreadPoolExecutor(max_workers=workers) as pool:
         rows = list(
-            pool.map(lambda ex: _run_one(assistant, ex, judge_client, judge_deployment), golden)
+            pool.map(
+                lambda ex: _run_one(assistant, ex, judge_client, judge_deployment, second_judge),
+                golden,
+            )
         )
     return summarize(assistant.prompt_version, rows)
 
@@ -246,6 +320,7 @@ def summarize(prompt_version: str, rows: list[dict]) -> dict:
         "relevance": round(statistics.mean(r["relevance"] for r in rows), 2),
         "p50_latency_ms": statistics.median(r["latency_ms"] for r in rows),
         "avg_tokens": round(statistics.mean(r["tokens"] for r in rows)),
+        "judge_agreement": judge_agreement(rows),
         "failures": [
             {
                 "category": r["category"],

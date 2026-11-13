@@ -59,17 +59,27 @@ def cmd_eval_retrieval(args) -> None:
 
 
 def cmd_eval(args) -> None:
-    from .clients import make_openai_client
-    from .evaluation import evaluate_answers, load_golden
+    from .clients import base_endpoint, make_openai_client
+    from .evaluation import FoundryJudge, evaluate_answers, load_golden
     from .factory import build_assistant
 
     s = get_settings()
+    judge_deployment = args.judge_deployment or s.judge_deployment or s.azure_openai_chat_deployment
+    second = None
+    if args.foundry_judge:
+        second = FoundryJudge(
+            base_endpoint(s.azure_openai_endpoint),
+            s.azure_openai_api_key,
+            judge_deployment,
+            s.azure_openai_api_version,
+        )
     report = evaluate_answers(
         build_assistant(s),
         load_golden(s.golden_path),
         make_openai_client(s),
-        args.judge_deployment or s.azure_openai_chat_deployment,
+        judge_deployment,
         workers=args.workers,
+        second_judge=second,
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -113,6 +123,11 @@ def main(argv: list[str] | None = None) -> None:
     e.add_argument("--judge-deployment", default=None)
     e.add_argument("--workers", type=int, default=4, help="questions evaluated in parallel")
     e.add_argument("--min-pass-rate", type=float, default=None)
+    e.add_argument(
+        "--foundry-judge",
+        action="store_true",
+        help="also score with azure-ai-evaluation and report judge agreement",
+    )
 
     args = p.parse_args(argv)
     {
