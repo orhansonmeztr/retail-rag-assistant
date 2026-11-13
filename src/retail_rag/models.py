@@ -27,20 +27,37 @@ class SearchResult(BaseModel):
     score: float
 
 
+Gender = Literal["kadin", "erkek", "unisex"]
+
+
 class SearchFilter(BaseModel):
-    """Structured filters the agent can pass; rendered to OData for Azure AI Search."""
+    """Structured filters the agent can pass; rendered to OData for Azure AI Search.
+
+    `gender` selects products for that gender and, unless `include_unisex` is False, unisex
+    products too: someone shopping for men can wear a unisex jacket. Both the in-memory
+    filter and the OData filter are derived from `allowed_genders()`, so they cannot drift.
+    """
 
     source: Source | None = None
     category: str | None = None
-    gender: str | None = None
+    gender: Gender | None = None
+    include_unisex: bool = True
     max_price: float | None = None
+
+    def allowed_genders(self) -> list[str] | None:
+        if self.gender is None:
+            return None
+        if self.include_unisex and self.gender != "unisex":
+            return [self.gender, "unisex"]
+        return [self.gender]
 
     def matches(self, doc: Document) -> bool:
         if self.source and doc.source != self.source:
             return False
         if self.category and doc.category != self.category:
             return False
-        if self.gender and doc.gender not in (self.gender, "unisex"):
+        genders = self.allowed_genders()
+        if genders is not None and doc.gender not in genders:
             return False
         return not (
             self.max_price is not None and (doc.price is None or doc.price > self.max_price)
@@ -55,8 +72,9 @@ class SearchFilter(BaseModel):
             parts.append(f"source eq {q(self.source)}")
         if self.category:
             parts.append(f"category eq {q(self.category)}")
-        if self.gender:
-            parts.append(f"(gender eq {q(self.gender)} or gender eq 'unisex')")
+        if genders := self.allowed_genders():
+            ors = " or ".join(f"gender eq {q(g)}" for g in genders)
+            parts.append(f"({ors})" if len(genders) > 1 else ors)
         if self.max_price is not None:
             parts.append(f"price le {float(self.max_price)}")
         return " and ".join(parts) or None

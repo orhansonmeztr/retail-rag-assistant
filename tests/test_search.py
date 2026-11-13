@@ -66,3 +66,34 @@ def test_openai_client_gets_timeout_and_retries():
     c = make_openai_client(s)
     assert c.max_retries == 5 and c.timeout == 12
     assert str(c.base_url).startswith("https://x.openai.azure.com/openai")
+
+
+def test_gender_filter_semantics_are_explicit():
+    women = Document(id="w", source="product", title="t", content="c", gender="kadin")
+    unisex = Document(id="u", source="product", title="t", content="c", gender="unisex")
+    men = Document(id="m", source="product", title="t", content="c", gender="erkek")
+
+    f = SearchFilter(gender="kadin")
+    assert f.matches(women) and f.matches(unisex) and not f.matches(men)
+    assert f.to_odata() == "(gender eq 'kadin' or gender eq 'unisex')"
+
+    strict = SearchFilter(gender="kadin", include_unisex=False)
+    assert strict.matches(women) and not strict.matches(unisex)
+    assert strict.to_odata() == "gender eq 'kadin'"
+
+    only_unisex = SearchFilter(gender="unisex")
+    assert only_unisex.matches(unisex) and not only_unisex.matches(women)
+    assert only_unisex.to_odata() == "gender eq 'unisex'"
+
+
+def test_agent_never_filters_to_unisex_only(retriever):
+    from retail_rag.agent import TOOLS, RetailAssistant
+
+    gender = TOOLS[0]["function"]["parameters"]["properties"]["gender"]
+    assert gender["enum"] == ["kadin", "erkek"]
+    a = RetailAssistant(None, "m", retriever, "s", "1")
+    ids = {
+        d.id
+        for d in a._run_tool("search_products", {"query": "su geçirmez bot", "gender": "unisex"})
+    }
+    assert "p-004" in ids  # the men's boot hidden by v1.0.0's unisex filter

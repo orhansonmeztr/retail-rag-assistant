@@ -47,7 +47,12 @@ TOOLS = [
                         "with correct Turkish characters (ç ğ ı ö ş ü)",
                     },
                     "category": {"type": "string", "enum": CATEGORIES},
-                    "gender": {"type": "string", "enum": ["kadin", "erkek", "unisex"]},
+                    "gender": {
+                        "type": "string",
+                        "enum": ["kadin", "erkek"],
+                        "description": "Only if the customer said who it is for. Unisex "
+                        "products are always included.",
+                    },
                     "max_price": {"type": "number", "description": "Maximum price in TL"},
                 },
                 "required": ["query"],
@@ -224,7 +229,9 @@ class RetailAssistant:
             flt = SearchFilter(
                 source="product",
                 category=args.get("category"),
-                gender=args.get("gender"),
+                # "unisex" is not offered to the model: as a filter it would hide most of the
+                # catalog (the v1.0.0 eval failure). Ignore it if a model sends it anyway.
+                gender=args.get("gender") if args.get("gender") in ("kadin", "erkek") else None,
                 max_price=args.get("max_price"),
             )
         elif name == "search_policies":
