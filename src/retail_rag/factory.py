@@ -51,4 +51,5 @@ def build_assistant(settings: Settings) -> RetailAssistant:
         prompt_version=version,
         max_steps=settings.max_agent_steps,
         top_k=settings.top_k,
+        answer_guard=settings.answer_guard,
     )

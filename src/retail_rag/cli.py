@@ -69,11 +69,15 @@ def cmd_eval(args) -> None:
         load_golden(s.golden_path),
         make_openai_client(s),
         args.judge_deployment or s.azure_openai_chat_deployment,
+        workers=args.workers,
     )
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     summary = {k: v for k, v in report.items() if k != "rows"}
+    if args.min_pass_rate and report["pass_rate"] < args.min_pass_rate:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        sys.exit(f"pass_rate={report['pass_rate']:.2f} < {args.min_pass_rate}")
     print(json.dumps(summary, ensure_ascii=False, indent=2))
 
 
@@ -104,6 +108,8 @@ def main(argv: list[str] | None = None) -> None:
     e = sub.add_parser("eval", help="end-to-end answer evaluation with an LLM judge")
     e.add_argument("--out", default="reports/eval.json")
     e.add_argument("--judge-deployment", default=None)
+    e.add_argument("--workers", type=int, default=4, help="questions evaluated in parallel")
+    e.add_argument("--min-pass-rate", type=float, default=None)
 
     args = p.parse_args(argv)
     {"ingest": cmd_ingest, "ask": cmd_ask, "eval-retrieval": cmd_eval_retrieval, "eval": cmd_eval}[

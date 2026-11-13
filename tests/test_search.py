@@ -51,3 +51,18 @@ def test_base_endpoint_strips_foundry_path():
     url = "https://x-resource.services.ai.azure.com/openai/v1/responses"
     assert base_endpoint(url) == "https://x-resource.services.ai.azure.com/"
     assert base_endpoint("https://y.openai.azure.com") == "https://y.openai.azure.com/"
+
+
+def test_openai_client_gets_timeout_and_retries():
+    from retail_rag.clients import make_openai_client
+    from retail_rag.config import Settings
+
+    s = Settings(
+        azure_openai_endpoint="https://x.openai.azure.com/abc",
+        azure_openai_api_key="k",
+        openai_timeout_s=12,
+        openai_max_retries=5,
+    )
+    c = make_openai_client(s)
+    assert c.max_retries == 5 and c.timeout == 12
+    assert str(c.base_url).startswith("https://x.openai.azure.com/openai")

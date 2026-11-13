@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     azure_openai_chat_deployment: str = "gpt-4.1-mini"
     azure_openai_embedding_deployment: str = "text-embedding-3-small"
     embedding_dimensions: int = 1536
+    openai_timeout_s: float = 30.0
+    # retries back off and honour Retry-After on 429/5xx; low-quota deployments need more
+    openai_max_retries: int = 6
 
     azure_search_endpoint: str = ""
     azure_search_api_key: str | None = None
@@ -27,6 +30,8 @@ class Settings(BaseSettings):
     search_backend: Literal["azure", "memory"] = "azure"
     top_k: int = 5
     max_agent_steps: int = 4
+    # extra LLM call that strips claims not supported by the retrieved sources
+    answer_guard: bool = True
 
     data_dir: Path = PROJECT_ROOT / "data"
     prompt_path: Path = PROJECT_ROOT / "prompts" / "assistant.yaml"

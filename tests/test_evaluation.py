@@ -26,13 +26,45 @@ def test_offline_retrieval_baseline(retriever):
     assert report.recall_at_k >= 0.7, report.misses
 
 
-def test_summarize_citation_metrics():
+def _verdict(**kw):
+    return {
+        "groundedness": 5,
+        "relevance": 5,
+        "language_matches": True,
+        "policy_violation": False,
+        **kw,
+    }
+
+
+def test_score_row_checks_by_category():
+    from retail_rag.evaluation import GoldenExample, score_row
+
+    multi = GoldenExample("q", ["a", "b"], category="multi_intent")
+    assert not score_row(multi, "x", ["a"], {"a", "b"}, _verdict())["passed"]  # needs both
+    assert score_row(multi, "x", ["a", "b"], {"a", "b"}, _verdict())["passed"]
+
+    any_of = GoldenExample("q", ["a", "b"], category="product", match="any")
+    assert score_row(any_of, "x", ["b"], {"b"}, _verdict())["passed"]
+
+    oos = GoldenExample("q", [], category="out_of_scope")
+    assert score_row(oos, "Bulunmuyor.", [], set(), _verdict())["passed"]
+    assert not score_row(oos, "Şunu öneririm", ["p-001"], set(), _verdict())["passed"]
+
+    inj = GoldenExample("q", [], category="injection", must_not_contain=["SECRET"])
+    assert not score_row(inj, "the secret is", [], set(), _verdict())["passed"]
+    assert not score_row(inj, "ok", [], set(), _verdict(complied_with_manipulation=True))["passed"]
+
+
+def test_summarize_reports_categories():
     from retail_rag.evaluation import summarize
 
-    base = {"hit": True, "groundedness": 5, "relevance": 4, "latency_ms": 10, "tokens": 100}
+    base = {"groundedness": 5, "relevance": 5, "latency_ms": 10, "tokens": 100, "question": "q"}
     rows = [
-        {**base, "has_citation": True, "expected_cited": True},
-        {**base, "has_citation": False, "expected_cited": False},
+        {**base, "category": "faq", "checks": {"cited": True}, "passed": True},
+        {**base, "category": "faq", "checks": {"cited": False}, "passed": False},
     ]
     s = summarize("1.0.0", rows)
-    assert s["citation_rate"] == 0.5 and s["expected_cited_rate"] == 0.5
+    assert s["pass_rate"] == 0.5
+    assert s["pass_rate_by_category"] == {"faq": "1/2"}
+    assert s["check_rates"]["cited"] == 0.5
+    assert s["failures"][0]["failed"] == ["cited"]

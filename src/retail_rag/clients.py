@@ -27,6 +27,8 @@ def make_openai_client(settings: Settings) -> AzureOpenAI:
             azure_endpoint=endpoint,
             api_key=settings.azure_openai_api_key,
             api_version=settings.azure_openai_api_version,
+            timeout=settings.openai_timeout_s,
+            max_retries=settings.openai_max_retries,
         )
     from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
@@ -37,6 +39,8 @@ def make_openai_client(settings: Settings) -> AzureOpenAI:
         azure_endpoint=endpoint,
         azure_ad_token_provider=token_provider,
         api_version=settings.azure_openai_api_version,
+        timeout=settings.openai_timeout_s,
+        max_retries=settings.openai_max_retries,
     )
 
 
