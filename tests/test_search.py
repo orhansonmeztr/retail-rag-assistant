@@ -43,3 +43,11 @@ def test_azure_index_schema_without_network():
     assert {"id", "content", "content_vector", "price"} <= names
     vec = next(f for f in index.fields if f.name == "content_vector")
     assert vec.vector_search_dimensions == 1536
+
+
+def test_base_endpoint_strips_foundry_path():
+    from retail_rag.clients import base_endpoint
+
+    url = "https://x-resource.services.ai.azure.com/openai/v1/responses"
+    assert base_endpoint(url) == "https://x-resource.services.ai.azure.com/"
+    assert base_endpoint("https://y.openai.azure.com") == "https://y.openai.azure.com/"

@@ -10,8 +10,8 @@ param location string = resourceGroup().location
 @allowed(['free', 'basic'])
 param searchSku string = 'free'
 
-param chatModel string = 'gpt-4o-mini'
-param chatModelVersion string = '2024-07-18'
+param chatModel string = 'gpt-4.1-mini'
+param chatModelVersion string = '2025-04-14'
 param embeddingModel string = 'text-embedding-3-small'
 
 resource search 'Microsoft.Search/searchServices@2023-11-01' = {
