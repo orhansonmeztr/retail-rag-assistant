@@ -20,6 +20,18 @@ jobs:
       # Retrieval quality gate that needs no cloud credentials
       - run: retail-rag eval-retrieval --offline -k 5 --min-recall 0.8
 
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and lint Bicep
+        run: |
+          az bicep install
+          for f in infra/main.bicep infra/app.bicep; do
+            az bicep build -f "$f" --stdout > /dev/null
+            az bicep lint -f "$f"
+          done
+
   docker:
     runs-on: ubuntu-latest
     needs: test

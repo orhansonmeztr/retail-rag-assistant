@@ -44,7 +44,8 @@ src/retail_rag/
   agent.py           tools, tool-calling loop, citation extraction
   evaluation.py      recall@k, MRR, LLM judge
   api.py / cli.py    REST service and command line
-infra/main.bicep     Azure AI Search + Azure OpenAI + model deployments
+infra/main.bicep     full setup: AI Search + Azure OpenAI + model deployments + app.bicep
+infra/app.bicep      Content Safety, App Insights, Container Apps on existing OpenAI/Search
 ```
 
 ## Quick start (no Azure account needed)
@@ -58,17 +59,20 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
 
 ## Run against Azure
 
-1. **Provision** (free Azure account credit is enough; Search `free` tier, pay-as-you-go tokens):
+1. **Provision** (free Azure account credit is enough; Search `free` tier, pay-as-you-go tokens).
+   Either create Azure OpenAI (deploy `gpt-4.1-mini` and `text-embedding-3-small`) and Azure AI
+   Search in the **Azure AI Foundry** portal, or deploy everything from scratch:
    ```bash
    az group create -n rg-retail-rag -l swedencentral
    az deployment group create -g rg-retail-rag -f infra/main.bicep -p prefix=<unique-name>
    ```
-   Or create the same resources from the **Azure AI Foundry** portal: create a project, deploy
-   `gpt-4.1-mini` and `text-embedding-3-small`, and add an Azure AI Search connection.
-
-   > The results below were produced with resources created in the Foundry portal.
-   > `infra/main.bicep` describes the same setup but has not been deployed end to end yet;
-   > model availability and quota differ per region and subscription.
+   With existing OpenAI / Search resources, deploy only the application layer (Content Safety,
+   Application Insights, optional Container Apps); see [docs/deploy.md](docs/deploy.md):
+   ```bash
+   az deployment group create -g <rg> -f infra/app.bicep -p prefix=<unique-name> \
+     openAiName=<resource> openAiEndpoint=https://<resource>.services.ai.azure.com/ \
+     searchName=<search-service>
+   ```
 2. **Configure**: `cp .env.example .env` and fill in endpoints (keys optional — leave empty to use
    `az login` / managed identity).
 3. **Index and ask**:
