@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: ruff check . && ruff format --check .
+      - run: pytest -q
+      # Retrieval quality gate that needs no cloud credentials
+      - run: retail-rag eval-retrieval --offline -k 5 --min-recall 0.8
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t retail-rag-assistant:${{ github.sha }} .
+
+  # Optional: full LLM-judged evaluation against Azure, only when secrets are configured.
+  eval-azure:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && vars.RUN_AZURE_EVAL == 'true'
+    env:
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+      AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install .
+      - run: retail-rag eval-retrieval -k 5 --min-recall 0.9
+      - run: retail-rag eval --out reports/eval.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: eval-report
+          path: reports/eval.json

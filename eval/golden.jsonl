@@ -1,0 +1,15 @@
+{"question": "Ürünü kaç gün içinde iade edebilirim?", "expected_ids": ["faq-iade-suresi-ve-kosullari-0"]}
+{"question": "Kozmetik ürünü açtım, iade edebilir miyim?", "expected_ids": ["faq-iade-suresi-ve-kosullari-0"]}
+{"question": "Kargo ücreti ne kadar, ücretsiz kargo limiti var mı?", "expected_ids": ["faq-kargo-ucreti-ve-teslimat-suresi-0"]}
+{"question": "Aynı gün teslimat hangi şehirlerde var?", "expected_ids": ["faq-kargo-ucreti-ve-teslimat-suresi-0"]}
+{"question": "Para iadesi kartıma ne zaman yatar?", "expected_ids": ["faq-iade-nasil-yapilir-0"]}
+{"question": "Kapıda ödeme yapabilir miyim?", "expected_ids": ["faq-odeme-secenekleri-ve-taksit-0"]}
+{"question": "Puanlarımın son kullanma tarihi var mı?", "expected_ids": ["faq-vitrin-puan-sadakat-programi-0"]}
+{"question": "Hediye kartı ne kadar süre geçerli?", "expected_ids": ["faq-hediye-karti-0"]}
+{"question": "Mağazadan teslim aldığım sipariş kaç gün bekletilir?", "expected_ids": ["faq-magazadan-teslim-al-0"]}
+{"question": "Kışın sıcak tutan bir kadın montu arıyorum", "expected_ids": ["p-005"], "filter": {"source": "product", "gender": "kadin"}}
+{"question": "Doğa yürüyüşü için su geçirmez bot", "expected_ids": ["p-004"], "filter": {"source": "product"}}
+{"question": "2000 TL altı beyaz sneaker", "expected_ids": ["p-003"], "filter": {"source": "product", "max_price": 2000}}
+{"question": "Laptop sığan sırt çantası", "expected_ids": ["p-016"], "filter": {"source": "product"}}
+{"question": "Davet için saten elbise", "expected_ids": ["p-009"], "filter": {"source": "product", "category": "elbise"}}
+{"question": "Hassas cilt için parfümsüz nemlendirici", "expected_ids": ["p-021"], "filter": {"source": "product"}}
