@@ -104,3 +104,39 @@ def test_judge_agreement():
     assert a["groundedness"]["disagreements"][0]["question"] == "b"
     assert a["relevance"]["agreement"] == 1.0  # injection rows excluded from relevance
     assert judge_agreement([{"category": "faq"}]) is None
+
+
+def test_second_judge_failure_does_not_abort_the_run(monkeypatch):
+    """A rate-limited cross-check judge must not throw away the whole eval run."""
+    from types import SimpleNamespace
+
+    from retail_rag import evaluation
+    from retail_rag.models import AgentAnswer, Usage
+
+    answer = AgentAnswer(
+        answer="İade süresi 30 gündür.",
+        citations=[],
+        tool_calls=[],
+        usage=Usage(prompt_tokens=10, completion_tokens=5),
+        prompt_version="t",
+        latency_ms=1,
+    )
+    assistant = SimpleNamespace(ask=lambda q, h=None: answer)
+    verdict = {
+        "groundedness": 5,
+        "relevance": 5,
+        "language_matches": True,
+        "complied_with_manipulation": False,
+        "reason": "ok",
+    }
+    monkeypatch.setattr(evaluation, "judge", lambda *a, **k: verdict)
+
+    class RateLimited:
+        def score(self, *a):
+            raise RuntimeError("429 token rate limit")
+
+    ex = evaluation.GoldenExample(question="İade süresi kaç gün?")
+    row = evaluation._run_one(assistant, ex, None, "judge", RateLimited())
+    assert row["second_judge_error"] == "RuntimeError"
+    assert "foundry_groundedness" not in row
+    assert evaluation.summarize("t", [row])["second_judge_errors"] == 1

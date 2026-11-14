@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import statistics
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -13,6 +14,8 @@ from typing import Literal
 from .agent import RetailAssistant, guess_language, is_content_filter_error
 from .models import ChatTurn, SearchFilter
 from .retriever import Retriever
+
+log = logging.getLogger(__name__)
 
 Category = Literal[
     "faq", "product", "english", "multi_intent", "out_of_scope", "injection", "multi_turn"
@@ -248,8 +251,10 @@ def _run_one(
             question = f"{history}\nuser: {ex.question}" if history else ex.question
             second = second_judge.score(question, ans.answer, context)
         except Exception as exc:
-            if not is_content_filter_error(exc):
-                raise
+            # the second judge is only a cross-check: a rate limit or content filter on it
+            # leaves this row out of the agreement stats instead of aborting the whole run
+            log.warning("second judge failed for %r: %s", ex.question[:60], exc)
+            second = {"second_judge_error": type(exc).__name__}
     cited = [c.id for c in ans.citations]
     return {
         "category": ex.category,
@@ -317,6 +322,7 @@ def summarize(prompt_version: str, rows: list[dict]) -> dict:
         },
         "blocked_by_content_filter": sum(r.get("blocked", False) for r in rows),
         "judge_filtered": sum(r.get("judge_filtered", False) for r in rows),
+        "second_judge_errors": sum("second_judge_error" in r for r in rows),
         "guard_edited": sum(r.get("guard_edited", False) for r in rows),
         "groundedness": round(statistics.mean(r["groundedness"] for r in rows), 2),
         "relevance": round(statistics.mean(r["relevance"] for r in rows), 2),
