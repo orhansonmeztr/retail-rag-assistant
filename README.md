@@ -19,7 +19,7 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 | Safety | API keys, per-key rate limit, **Azure AI Content Safety Prompt Shields**, Azure OpenAI content-filter handling |
 | Integration | FastAPI `/chat` and streaming `/chat/stream` (SSE); Swagger 2.0 connector for **Copilot Studio**; **Azure Functions** event-driven re-indexing |
 | LLMOps | Versioned prompts with changelog; 38-question golden set in 7 categories incl. prompt injection; **LLM-as-judge** cross-checked with **Azure AI Foundry evaluators**; OpenTelemetry GenAI tracing to Application Insights; CI quality gate |
-| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 58 offline unit tests with a scripted fake LLM, Docker image published to GHCR, GitHub Actions, Bicep IaC, timeouts / retries, keyless Entra ID auth supported |
+| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 61 offline unit tests with a scripted fake LLM, Docker image published to GHCR, GitHub Actions, Bicep IaC, timeouts / retries, keyless Entra ID auth supported |
 
 ## Architecture
 
@@ -65,7 +65,7 @@ docs/                deployment and Copilot Studio guides
 ```bash
 uv venv && source .venv/bin/activate      # or python -m venv .venv
 uv pip install -e ".[dev]"
-pytest -q                                 # 58 tests, all offline
+pytest -q                                 # 61 tests, all offline
 retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
 ```
 
