@@ -23,6 +23,8 @@ from .security import RateLimiter, key_is_valid, parse_api_keys
 from .telemetry import configure_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+# the Azure SDK logs every request's headers at INFO; keep only its warnings
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 # no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set (environment or .env)
 configure_telemetry(get_settings().applicationinsights_connection_string)

@@ -20,6 +20,19 @@ az deployment group create -g $RG -f infra/app.bicep -p prefix=$P location=$LOC 
   searchName=<search-service> searchIndex=$AZURE_SEARCH_INDEX
 ```
 
+Add `deployApi=true apiImage=ghcr.io/<owner>/retail-rag-assistant:latest apiKeys="$API_KEYS"`
+to also run the API. If Content Safety, Log Analytics or Application Insights were already
+created in the portal, reuse them instead of creating duplicates (a subscription gets only
+one free F0 Content Safety resource):
+
+```bash
+  createContentSafety=false contentSafetyName=<content-safety-resource> \
+  createMonitoring=false logAnalyticsName=<workspace> appInsightsName=<app-insights>
+```
+
+Run `az deployment group what-if` with the same parameters first to see exactly what will be
+created or changed.
+
 The step-by-step CLI commands are kept for when you want to create pieces individually.
 
 ## 1. API on Azure Container Apps

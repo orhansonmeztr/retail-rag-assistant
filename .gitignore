@@ -9,3 +9,5 @@ reports/
 functions/retail_rag/
 functions/local.settings.json
 functions/.python_packages/
+# connector with the real host name, kept out of the public repo
+copilot/*.local.yaml

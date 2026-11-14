@@ -59,6 +59,11 @@ jobs:
             retail-rag-assistant:${{ github.sha }}
           for i in $(seq 1 30); do curl -sf localhost:8000/health && exit 0; sleep 1; done
           docker logs api; exit 1
+      # without the exporter a connection string is accepted but no trace leaves the container
+      - name: Image can export to Application Insights
+        run: |
+          docker run --rm retail-rag-assistant:${{ github.sha }} \
+            python -c "import azure.monitor.opentelemetry"
 
   # Optional: full LLM-judged evaluation against Azure, only when secrets are configured.
   eval-azure:

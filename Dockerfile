@@ -5,7 +5,8 @@ WORKDIR /app
 
 COPY pyproject.toml README.md ./
 COPY src ./src
-RUN pip install .
+# monitor: Azure Monitor exporter, so APPLICATIONINSIGHTS_CONNECTION_STRING actually exports traces
+RUN pip install ".[monitor]"
 
 COPY data ./data
 COPY prompts ./prompts
