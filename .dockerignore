@@ -1,7 +1,15 @@
-.venv
-.env
-.git
+# Allowlist: the build context holds only what the Dockerfile copies. Everything else,
+# including secrets (.env, functions/local.settings.json, copilot/*.local.*), the venv,
+# tests and docs, never reaches the Docker daemon, and new files stay out by default.
+*
+!pyproject.toml
+!README.md
+!src
+!data
+!prompts
+!eval
+
+# build leftovers inside the allowed folders
 **/__pycache__
-.pytest_cache
-.ruff_cache
-reports
+**/*.pyc
+**/*.egg-info
