@@ -77,7 +77,7 @@ jobs:
           python-version: "3.12"
       - run: pip install .
       - run: retail-rag eval-retrieval -k 5 --min-recall 0.9
-      - run: retail-rag eval --out reports/eval.json
+      - run: retail-rag eval --out reports/eval.json --min-pass-rate 0.9
       - uses: actions/upload-artifact@v4
         with:
           name: eval-report
