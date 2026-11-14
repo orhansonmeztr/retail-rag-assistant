@@ -102,6 +102,10 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
    uvicorn retail_rag.api:app --reload      # http://localhost:8000/docs
    docker build -t retail-rag . && docker run --env-file .env -p 8000:8000 retail-rag
    ```
+   If the container logs `Temporary failure in name resolution` for the Azure OpenAI host
+   while other Azure calls work, the router's DNS (which Docker hands to containers) cannot
+   resolve the long CNAME chain behind `*.services.ai.azure.com`; add `--dns 1.1.1.1` to
+   `docker run`. `--env-file` also keeps quotes literally, so write `.env` values unquoted.
 
 A real response from `POST /chat` (answer shortened, citation URLs omitted):
 
