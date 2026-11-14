@@ -295,6 +295,19 @@ It showed that the first request paid ~3 s of connection setup (search 2.4 s ins
 steady ~0.5 s), so the API now warms its connections at startup: the first request dropped
 from ~8.5 s to ~4.5 s.
 
+The same view for the deployed API in Application Insights (an FAQ question, guard enabled).
+Inside Azure the search call takes ~100 ms and Prompt Shields ~160 ms, so the three model
+calls (1.1-1.3 s each: tool choice, answer, grounding guard) are almost all of the 4 s. The
+portal labels every model call "chat" (the GenAI operation name); the guard is the last one,
+and its `retail_rag.step` attribute says `answer_guard`.
+
+![End-to-end transaction of one /chat request in Application Insights](docs/images/azure-trace-end-to-end.png)
+
+The application map is drawn from the same telemetry: `retail-rag-api` and the Azure
+OpenAI, AI Search and Content Safety endpoints it calls, with call counts and latencies.
+
+![Application map of retail-rag-api](docs/images/azure-application-map.png)
+
 ## Security
 
 Layered, because the evaluation showed that no single layer catches everything:
@@ -332,6 +345,12 @@ locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
   workflow rolls it out to **Azure Container Apps** (scale-to-zero). The API runs on Container
   Apps (deployed with `infra/app.bicep`, reusing the Content Safety and monitoring resources
   made in the portal); automatic rollout from GitHub is not enabled yet. Commands: [docs/deploy.md](docs/deploy.md).
+
+  The resource group (AI Search in Central US, everything else in East US 2; the app only
+  uses endpoints, so regions can differ) and the API's revision, scaled to zero while idle:
+
+  ![Azure resources of the project](docs/images/azure-resource-group.png)
+  ![Container Apps revision scaled to zero](docs/images/azure-container-app-revision.png)
 - **Copilot Studio**: `copilot/openapi-v2.yaml` is a Swagger 2.0 definition of the
   `AskAssistant` operation with API-key auth. Imported as a Power Platform custom connector,
   it called the deployed API and returned **200** with a grounded, cited answer, passing the
