@@ -79,8 +79,12 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
    set -a; source .env; set +a
    az group create -n "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION"
    az deployment group create -g "$AZURE_RESOURCE_GROUP" -f infra/main.bicep \
-     -p prefix="$AZURE_PREFIX" location="$AZURE_LOCATION"
+     -p prefix="$AZURE_PREFIX" location="$AZURE_LOCATION" \
+        searchLocation="${AZURE_SEARCH_LOCATION:-$AZURE_LOCATION}"
    ```
+   `searchLocation` exists because AI Search and Azure OpenAI are not always available in the
+   same region (the free Search tier or a model may be missing); the app itself only uses
+   endpoints, so the two can live in different regions.
    With OpenAI / Search already in place, deploy only the application layer (Content Safety,
    Application Insights, optional Container Apps); details in [docs/deploy.md](docs/deploy.md).
 2. **Configure**: `cp .env.example .env` and fill in endpoints (keys optional — leave empty to use

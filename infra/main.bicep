@@ -10,7 +10,10 @@
 
 @description('Short unique prefix for resource names')
 param prefix string
+@description('Region for Azure OpenAI and all application resources')
 param location string = resourceGroup().location
+@description('Region for AI Search; can differ when the free tier or capacity is not offered in location')
+param searchLocation string = location
 
 @allowed(['free', 'basic'])
 param searchSku string = 'free'
@@ -31,7 +34,7 @@ param apiKeys string = ''
 
 resource search 'Microsoft.Search/searchServices@2023-11-01' = {
   name: '${prefix}-search'
-  location: location
+  location: searchLocation
   sku: { name: searchSku }
   properties: {
     replicaCount: 1
