@@ -34,6 +34,7 @@ jobs:
           ./functions/build.sh
           cd functions && /tmp/fn/bin/python -c "import function_app"
 
+  infra:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
