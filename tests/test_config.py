@@ -17,7 +17,6 @@ DEPLOYMENT_VARS = {
     "AZURE_SEARCH_LOCATION",
     "AZURE_RESOURCE_GROUP",
     "AZURE_PREFIX",
-    "APPLICATIONINSIGHTS_CONNECTION_STRING",
 }
 # paths with sensible defaults inside the repo / container; not meant for .env
 INTERNAL_SETTINGS = {"DATA_DIR", "PROMPT_PATH", "GOLDEN_PATH"}

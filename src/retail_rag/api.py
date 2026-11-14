@@ -24,7 +24,8 @@ from .telemetry import configure_telemetry
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
-configure_telemetry()  # no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set
+# no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set (environment or .env)
+configure_telemetry(get_settings().applicationinsights_connection_string)
 
 log = logging.getLogger(__name__)
 

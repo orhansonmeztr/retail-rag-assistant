@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +11,10 @@ from retail_rag.retriever import Retriever
 from retail_rag.search_backend import InMemoryBackend
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Tests must never export to a real Application Insights from a developer's local .env;
+# an environment variable overrides .env in Settings.
+os.environ["APPLICATIONINSIGHTS_CONNECTION_STRING"] = ""
 
 
 @pytest.fixture(scope="session")

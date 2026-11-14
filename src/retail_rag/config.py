@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     # Azure AI Content Safety Prompt Shields; disabled when the endpoint is empty
     content_safety_endpoint: str = ""
     content_safety_api_key: str | None = None
+    # Application Insights; traces are exported when set and the `monitor` extra is installed
+    applicationinsights_connection_string: str | None = None
 
     data_dir: Path = PROJECT_ROOT / "data"
     prompt_path: Path = PROJECT_ROOT / "prompts" / "assistant.yaml"

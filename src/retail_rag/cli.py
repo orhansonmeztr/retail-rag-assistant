@@ -156,6 +156,9 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     args = p.parse_args(argv)
+    from .telemetry import configure_telemetry
+
+    configure_telemetry(get_settings().applicationinsights_connection_string)
     {
         "ingest": cmd_ingest,
         "sync": cmd_sync,
