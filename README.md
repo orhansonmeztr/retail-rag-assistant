@@ -17,7 +17,7 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 | Agent / tool calling | LLM chooses between `search_products` (category / gender / max-price filters → OData) and `search_policies`; multi-step loop with a step budget; multi-turn via history |
 | Grounding | `[doc-id]` citations required, ids never retrieved are dropped, and a **grounding guard** removes claims the sources don't support |
 | Safety | API keys, per-key rate limit, **Azure AI Content Safety Prompt Shields**, Azure OpenAI content-filter handling |
-| Integration | FastAPI `/chat` and streaming `/chat/stream` (SSE); Swagger 2.0 connector for **Copilot Studio**; **Azure Functions** event-driven re-indexing |
+| Integration | FastAPI `/chat` and streaming `/chat/stream` (SSE), deployed on **Azure Container Apps**; Power Platform custom connector for **Copilot Studio** (tested against the live API); **Azure Functions** event-driven re-indexing |
 | LLMOps | Versioned prompts with changelog; 38-question golden set in 7 categories incl. prompt injection; **LLM-as-judge** cross-checked with **Azure AI Foundry evaluators** and a judge from another model family; OpenTelemetry GenAI tracing to Application Insights; CI quality gates |
 | Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 64 offline unit tests with a scripted fake LLM, Docker image published to GHCR, GitHub Actions, Bicep IaC, timeouts / retries, keyless Entra ID auth supported |
 
@@ -54,7 +54,7 @@ src/retail_rag/
 prompts/             versioned system prompt with changelog
 eval/golden.jsonl    38 evaluation questions
 functions/           Azure Functions app (blob trigger → sync)
-copilot/             Swagger 2.0 connector for Copilot Studio
+copilot/             Swagger 2.0 connector for Copilot Studio / Power Platform
 infra/main.bicep     full setup: AI Search + Foundry (AIServices) + model deployments + app.bicep
 infra/app.bicep      Content Safety, App Insights, Container Apps on existing OpenAI/Search
 docs/                deployment and Copilot Studio guides
@@ -333,8 +333,15 @@ locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
   Apps (deployed with `infra/app.bicep`, reusing the Content Safety and monitoring resources
   made in the portal); automatic rollout from GitHub is not enabled yet. Commands: [docs/deploy.md](docs/deploy.md).
 - **Copilot Studio**: `copilot/openapi-v2.yaml` is a Swagger 2.0 definition of the
-  `AskAssistant` operation with API-key auth, ready to import as a REST API tool / Power
-  Platform custom connector. Step-by-step: [docs/copilot-studio.md](docs/copilot-studio.md).
+  `AskAssistant` operation with API-key auth. Imported as a Power Platform custom connector,
+  it called the deployed API and returned **200** with a grounded, cited answer, passing the
+  connector's response schema validation; the connector is added to a Copilot Studio agent
+  as a tool. The chat test inside Copilot Studio was not run: the current Copilot Studio
+  charges Copilot Credits even for testing, the tenant has none, and pay-as-you-go cannot
+  be attached to a Developer environment. Steps and these prerequisites:
+  [docs/copilot-studio.md](docs/copilot-studio.md).
+
+  ![Custom connector test against the deployed API](docs/images/copilot-connector-test.png)
 
 ## Next steps
 
@@ -347,3 +354,6 @@ locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
 - A larger golden set (38 questions is a regression suite; differences of one question are
   within run-to-run noise)
 - Global rate limiting and authentication at a gateway (Azure API Management)
+- Run the Copilot Studio chat test in an environment with Copilot Credits, and expose the
+  assistant as an MCP server too (the current Copilot Studio adds tools as MCP servers or
+  connectors)
