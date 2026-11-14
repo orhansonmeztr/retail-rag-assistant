@@ -20,7 +20,20 @@ jobs:
       # Retrieval quality gate that needs no cloud credentials
       - run: retail-rag eval-retrieval --offline -k 5 --min-recall 0.8
 
-  infra:
+  functions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # install only what Azure Functions will install, then load the app
+      - name: Import the Functions app with its own requirements
+        run: |
+          python -m venv /tmp/fn && /tmp/fn/bin/pip install -q -r functions/requirements.txt
+          ./functions/build.sh
+          cd functions && /tmp/fn/bin/python -c "import function_app"
+
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

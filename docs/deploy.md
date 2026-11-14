@@ -1,12 +1,26 @@
 # Deployment
 
-Everything below uses the Azure CLI (`az login` first). Replace `<...>` placeholders.
-Resource names must be globally unique where noted.
+Everything below uses the Azure CLI (`az login` first). Region, resource group and the
+name prefix come from the *Deployment* section of `.env` (see `.env.example`), so they are
+written down once; the Azure OpenAI and Search settings come from the same file.
 
 ```bash
-RG=rg-retail-rag
-LOC=swedencentral
+set -a; source .env; set +a          # export every .env value into this shell
+RG=$AZURE_RESOURCE_GROUP
+LOC=$AZURE_LOCATION                  # region for NEW resources; existing ones keep theirs
+P=$AZURE_PREFIX                      # names: $P-api, $P-env, ... (keep it short and unique)
 ```
+
+The simplest route is the Bicep template, which creates the same resources as the commands
+below and wires their keys together:
+
+```bash
+az deployment group create -g $RG -f infra/app.bicep -p prefix=$P location=$LOC \
+  openAiName=<openai-or-foundry-resource> openAiEndpoint=$AZURE_OPENAI_ENDPOINT \
+  searchName=<search-service> searchIndex=$AZURE_SEARCH_INDEX
+```
+
+The step-by-step CLI commands are kept for when you want to create pieces individually.
 
 ## 1. API on Azure Container Apps
 
@@ -15,23 +29,24 @@ on every push to `main`. Make the package public once (GitHub → Packages → p
 Change visibility), or pass `--registry-*` credentials below.
 
 ```bash
-az containerapp env create -n retail-rag-env -g $RG -l $LOC
+az containerapp env create -n $P-env -g $RG -l $LOC
 
-az containerapp create -n retail-rag-api -g $RG --environment retail-rag-env \
+az containerapp create -n $P-api -g $RG --environment $P-env \
   --image ghcr.io/<owner>/retail-rag-assistant:latest \
   --target-port 8000 --ingress external --min-replicas 0 --max-replicas 1 \
-  --secrets aoai-key=<azure-openai-key> search-key=<search-key> api-keys=<comma-separated-client-keys> \
+  --secrets aoai-key="$AZURE_OPENAI_API_KEY" search-key="$AZURE_SEARCH_API_KEY" api-keys="$API_KEYS" \
   --env-vars \
-    AZURE_OPENAI_ENDPOINT=https://<resource>.services.ai.azure.com/ \
+    AZURE_OPENAI_ENDPOINT="$AZURE_OPENAI_ENDPOINT" \
     AZURE_OPENAI_API_KEY=secretref:aoai-key \
-    AZURE_OPENAI_API_VERSION=2024-10-21 \
-    AZURE_OPENAI_CHAT_DEPLOYMENT=gpt-4.1-mini \
-    AZURE_SEARCH_ENDPOINT=https://<search>.search.windows.net \
+    AZURE_OPENAI_API_VERSION="$AZURE_OPENAI_API_VERSION" \
+    AZURE_OPENAI_CHAT_DEPLOYMENT="$AZURE_OPENAI_CHAT_DEPLOYMENT" \
+    AZURE_OPENAI_EMBEDDING_DEPLOYMENT="$AZURE_OPENAI_EMBEDDING_DEPLOYMENT" \
+    AZURE_SEARCH_ENDPOINT="$AZURE_SEARCH_ENDPOINT" \
     AZURE_SEARCH_API_KEY=secretref:search-key \
-    AZURE_SEARCH_INDEX=retail-knowledge-v1 \
+    AZURE_SEARCH_INDEX="$AZURE_SEARCH_INDEX" \
     API_KEYS=secretref:api-keys
 
-az containerapp show -n retail-rag-api -g $RG --query properties.configuration.ingress.fqdn -o tsv
+az containerapp show -n $P-api -g $RG --query properties.configuration.ingress.fqdn -o tsv
 ```
 
 `--min-replicas 0` scales to zero when idle, so a demo costs almost nothing; the first
@@ -40,14 +55,14 @@ request after a pause takes a few seconds longer (cold start).
 **Continuous deployment (optional).** Create a federated credential for GitHub Actions
 (OIDC, no stored passwords), then set the repository secrets `AZURE_CLIENT_ID`,
 `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID` and the variables `DEPLOY_CONTAINER_APP=true`,
-`CONTAINER_APP_NAME=retail-rag-api`, `AZURE_RESOURCE_GROUP=rg-retail-rag`. Each push to
+`CONTAINER_APP_NAME=<prefix>-api` and `AZURE_RESOURCE_GROUP` (same values as in `.env`). Each push to
 `main` then rolls the new image out.
 
 ## 2. Event-driven re-indexing with Azure Functions
 
 ```bash
-ST=<uniquestorage>
-APP=<unique-function-app>
+ST=${P//-/}catalog                    # storage names: lowercase letters and digits only
+APP=$P-sync
 
 az storage account create -n $ST -g $RG -l $LOC --sku Standard_LRS
 az storage container create -n catalog --account-name $ST --auth-mode login
@@ -56,11 +71,11 @@ az functionapp create -g $RG -n $APP --storage-account $ST \
 
 az functionapp config appsettings set -g $RG -n $APP --settings \
   CatalogStorage="$(az storage account show-connection-string -n $ST -g $RG -o tsv)" \
-  AZURE_OPENAI_ENDPOINT=https://<resource>.services.ai.azure.com/ \
-  AZURE_OPENAI_API_KEY=<key> AZURE_OPENAI_API_VERSION=2024-10-21 \
-  AZURE_OPENAI_EMBEDDING_DEPLOYMENT=text-embedding-3-small \
-  AZURE_SEARCH_ENDPOINT=https://<search>.search.windows.net \
-  AZURE_SEARCH_API_KEY=<key> AZURE_SEARCH_INDEX=retail-knowledge-v1
+  AZURE_OPENAI_ENDPOINT="$AZURE_OPENAI_ENDPOINT" AZURE_OPENAI_API_KEY="$AZURE_OPENAI_API_KEY" \
+  AZURE_OPENAI_API_VERSION="$AZURE_OPENAI_API_VERSION" \
+  AZURE_OPENAI_EMBEDDING_DEPLOYMENT="$AZURE_OPENAI_EMBEDDING_DEPLOYMENT" \
+  AZURE_SEARCH_ENDPOINT="$AZURE_SEARCH_ENDPOINT" AZURE_SEARCH_API_KEY="$AZURE_SEARCH_API_KEY" \
+  AZURE_SEARCH_INDEX="$AZURE_SEARCH_INDEX"
 
 cd functions && ./build.sh && func azure functionapp publish $APP --python
 ```

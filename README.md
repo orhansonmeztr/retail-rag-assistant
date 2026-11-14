@@ -13,25 +13,29 @@ Foundry), Azure AI Search hybrid retrieval and an LLM tool-calling agent, served
 
 | Area | Implementation |
 |---|---|
-| RAG | Paragraph-aware chunking, Azure OpenAI embeddings, **hybrid search** (BM25 + HNSW vector, RRF fusion), optional **semantic ranker**, Turkish analyzer (`tr.microsoft`) |
-| Agent / tool calling | LLM chooses between `search_products` (with category / gender / max-price filters → OData) and `search_policies`; multi-step loop with a step budget |
-| Grounding | System prompt requires `[doc-id]` citations; ids never retrieved are dropped from the response |
-| Integration | FastAPI `/chat` endpoint; its OpenAPI spec imports into **Copilot Studio / Power Automate** as a custom connector |
-| LLMOps | Versioned prompt (`prompts/assistant.yaml`), per-request token usage + latency + prompt version, golden-set evaluation (recall@k, MRR), **LLM-as-judge** groundedness & relevance, CI quality gate |
-| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 58 offline unit tests with a scripted fake LLM, Docker, GitHub Actions, Bicep IaC, keyless Entra ID auth supported |
+| RAG | Paragraph-aware chunking, Azure OpenAI embeddings, **hybrid search** (BM25 + HNSW vector, RRF fusion), optional semantic ranker, Turkish analyzer (`tr.microsoft`) |
+| Agent / tool calling | LLM chooses between `search_products` (category / gender / max-price filters → OData) and `search_policies`; multi-step loop with a step budget; multi-turn via history |
+| Grounding | `[doc-id]` citations required, ids never retrieved are dropped, and a **grounding guard** removes claims the sources don't support |
+| Safety | API keys, per-key rate limit, **Azure AI Content Safety Prompt Shields**, Azure OpenAI content-filter handling |
+| Integration | FastAPI `/chat` and streaming `/chat/stream` (SSE); Swagger 2.0 connector for **Copilot Studio**; **Azure Functions** event-driven re-indexing |
+| LLMOps | Versioned prompts with changelog; 38-question golden set in 7 categories incl. prompt injection; **LLM-as-judge** cross-checked with **Azure AI Foundry evaluators**; OpenTelemetry GenAI tracing to Application Insights; CI quality gate |
+| Engineering | Typed config (pydantic-settings), Protocol-based backends (Azure ↔ in-memory), 58 offline unit tests with a scripted fake LLM, Docker image published to GHCR, GitHub Actions, Bicep IaC, timeouts / retries, keyless Entra ID auth supported |
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    U[Customer / Copilot Studio] -->|POST /chat| API[FastAPI]
-    API --> AG[RetailAssistant<br/>tool-calling loop]
-    AG <-->|chat completions + tools| AOAI[(Azure OpenAI<br/>gpt-4.1-mini)]
+    U[Customer / Copilot Studio] -->|POST /chat, /chat/stream<br/>X-API-Key| API[FastAPI<br/>auth + rate limit]
+    API --> PS{{Prompt Shields}}
+    PS --> AG[RetailAssistant<br/>tool-calling loop]
+    AG <-->|chat + tools| AOAI[(Azure OpenAI<br/>gpt-4.1-mini)]
     AG -->|search_products / search_policies| R[Retriever]
     R -->|embed query| EMB[(Azure OpenAI<br/>text-embedding-3-small)]
-    R -->|hybrid + filter| AIS[(Azure AI Search<br/>BM25 + HNSW + semantic)]
+    R -->|hybrid + filter| AIS[(Azure AI Search<br/>BM25 + HNSW)]
+    AG --> GG[grounding guard] --> API
+    AG -.->|OpenTelemetry| AI[(Application Insights)]
     subgraph Ingestion
-      D[products.jsonl<br/>faq.md] --> CH[chunk] --> EMB2[embed] --> AIS
+      BL[(Blob: catalog/)] -->|Event Grid| FN[Azure Function<br/>incremental sync] --> AIS
     end
 ```
 
@@ -41,11 +45,19 @@ src/retail_rag/
   embeddings.py      AzureOpenAIEmbedder, HashingEmbedder (offline)
   search_backend.py  AzureSearchBackend (index schema, hybrid query), InMemoryBackend
   retriever.py       embed → search
-  agent.py           tools, tool-calling loop, citation extraction
-  evaluation.py      recall@k, MRR, LLM judge
+  agent.py           tools, tool-calling loop, streaming events, grounding guard
+  security.py        API keys, rate limiter, Prompt Shields client
+  telemetry.py       OpenTelemetry spans, Azure Monitor export
+  sync.py            incremental index sync (content hashes)
+  evaluation.py      recall@k, MRR, checks, LLM judge, Foundry judge agreement
   api.py / cli.py    REST service and command line
+prompts/             versioned system prompt with changelog
+eval/golden.jsonl    38 evaluation questions
+functions/           Azure Functions app (blob trigger → sync)
+copilot/             Swagger 2.0 connector for Copilot Studio
 infra/main.bicep     full setup: AI Search + Azure OpenAI + model deployments + app.bicep
 infra/app.bicep      Content Safety, App Insights, Container Apps on existing OpenAI/Search
+docs/                deployment and Copilot Studio guides
 ```
 
 ## Quick start (no Azure account needed)
@@ -60,19 +72,17 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
 ## Run against Azure
 
 1. **Provision** (free Azure account credit is enough; Search `free` tier, pay-as-you-go tokens).
-   Either create Azure OpenAI (deploy `gpt-4.1-mini` and `text-embedding-3-small`) and Azure AI
-   Search in the **Azure AI Foundry** portal, or deploy everything from scratch:
+   Create Azure OpenAI / Azure AI Foundry (deploy `gpt-4.1-mini` and `text-embedding-3-small`)
+   and Azure AI Search in the portal, or deploy both from scratch. Region, resource group and
+   name prefix live in the *Deployment* section of `.env`:
    ```bash
-   az group create -n rg-retail-rag -l swedencentral
-   az deployment group create -g rg-retail-rag -f infra/main.bicep -p prefix=<unique-name>
+   set -a; source .env; set +a
+   az group create -n "$AZURE_RESOURCE_GROUP" -l "$AZURE_LOCATION"
+   az deployment group create -g "$AZURE_RESOURCE_GROUP" -f infra/main.bicep \
+     -p prefix="$AZURE_PREFIX" location="$AZURE_LOCATION"
    ```
-   With existing OpenAI / Search resources, deploy only the application layer (Content Safety,
-   Application Insights, optional Container Apps); see [docs/deploy.md](docs/deploy.md):
-   ```bash
-   az deployment group create -g <rg> -f infra/app.bicep -p prefix=<unique-name> \
-     openAiName=<resource> openAiEndpoint=https://<resource>.services.ai.azure.com/ \
-     searchName=<search-service>
-   ```
+   With OpenAI / Search already in place, deploy only the application layer (Content Safety,
+   Application Insights, optional Container Apps); details in [docs/deploy.md](docs/deploy.md).
 2. **Configure**: `cp .env.example .env` and fill in endpoints (keys optional — leave empty to use
    `az login` / managed identity).
 3. **Index and ask**:
@@ -87,18 +97,48 @@ retail-rag eval-retrieval --offline       # recall@5 / MRR on the golden set
    docker build -t retail-rag . && docker run --env-file .env -p 8000:8000 retail-rag
    ```
 
-Example response (shape):
+A real response from `POST /chat` (answer shortened, citation URLs omitted):
 
 ```json
 {
-  "answer": "Kuzey Kaz Tüyü Şişme Mont (6.499 TL) eksi 15 dereceye kadar sıcak tutar [p-005] ...",
-  "citations": [{"id": "p-005", "title": "Kuzey Kaz Tüyü Şişme Mont", "source": "product"}],
-  "tool_calls": [{"name": "search_products",
-                  "arguments": {"query": "sıcak tutan kışlık mont", "gender": "kadin", "max_price": 7000},
-                  "result_ids": ["p-005", "p-007", "p-008"]}],
-  "usage": {"prompt_tokens": 1830, "completion_tokens": 96},
-  "prompt_version": "1.0.0",
-  "latency_ms": 2140
+  "answer": "Kışın sıcak tutan 7000 TL altı kadın montu olarak \"Kuzey Kaz Tüyü Şişme Mont\"u öneririm. Bu mont %90 kaz tüyü dolguya sahip olup, eksi 15 dereceye kad ...",
+  "citations": [
+    {
+      "id": "p-005",
+      "title": "Kuzey Kaz Tüyü Şişme Mont",
+      "source": "product"
+    },
+    {
+      "id": "p-008",
+      "title": "Zirve Polar Ceket",
+      "source": "product"
+    }
+  ],
+  "tool_calls": [
+    {
+      "name": "search_products",
+      "arguments": {
+        "query": "kışlık sıcak tutan kadın mont",
+        "gender": "kadin",
+        "max_price": 7000,
+        "category": "mont"
+      },
+      "result_ids": [
+        "p-005",
+        "p-008",
+        "p-007"
+      ]
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 2566,
+    "completion_tokens": 315
+  },
+  "prompt_version": "1.3.0",
+  "latency_ms": 6931,
+  "blocked": false,
+  "blocked_by": null,
+  "guard_edited": false
 }
 ```
 
@@ -263,7 +303,9 @@ locally; deployment steps are in [docs/deploy.md](docs/deploy.md).
 
 ## Next steps
 
-- Azure Functions blob trigger for incremental re-indexing when the catalog changes (event-driven)
-- Tracing with `azure-monitor-opentelemetry` into Application Insights / Foundry tracing
-- Azure AI Foundry evaluation SDK (`azure-ai-evaluation`) for built-in groundedness evaluators
-- Conversation memory and query rewriting for multi-turn questions
+- Conversation memory and query rewriting for multi-turn questions (today the client sends
+  the history; the model resolves references itself)
+- A judge from a different model family to remove self-preference bias (`JUDGE_DEPLOYMENT`)
+- Fix the remaining eval miss: look up and state the real price when asked to confirm a
+  false one
+- Global rate limiting and authentication at a gateway (Azure API Management)

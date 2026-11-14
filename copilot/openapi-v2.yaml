@@ -59,6 +59,14 @@ paths:
                     url: {type: string}
               blocked:
                 type: boolean
-                description: True when the request was refused by the content filter.
+                description: True when the request was refused before answering.
+              blocked_by:
+                type: string
+                description: prompt_shield or content_filter, when blocked.
+              guard_edited:
+                type: boolean
+                description: True when unsupported claims were removed from the answer.
         "401": {description: Missing or invalid API key}
         "429": {description: Rate limit exceeded}
+        "503": {description: Model busy or assistant not configured; see Retry-After}
+        "504": {description: Upstream timeout}

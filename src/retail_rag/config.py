@@ -26,7 +26,7 @@ class Settings(BaseSettings):
 
     azure_search_endpoint: str = ""
     azure_search_api_key: str | None = None
-    azure_search_index: str = "retail-knowledge"
+    azure_search_index: str = "retail-knowledge-v1"
     use_semantic_ranker: bool = False
     search_timeout_s: float = 10.0
     search_max_retries: int = 3
