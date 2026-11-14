@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(logging.WARNING)
 
 # no-op unless APPLICATIONINSIGHTS_CONNECTION_STRING is set (environment or .env)
-configure_telemetry(get_settings().applicationinsights_connection_string)
+configure_telemetry(get_settings().applicationinsights_connection_string, "retail-rag-api")
 
 log = logging.getLogger(__name__)
 

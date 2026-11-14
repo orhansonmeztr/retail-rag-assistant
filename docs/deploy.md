@@ -37,7 +37,7 @@ The step-by-step CLI commands are kept for when you want to create pieces indivi
 
 ## 1. API on Azure Container Apps
 
-The `Publish image` workflow pushes `ghcr.io/<owner>/retail-rag-assistant:<sha>` and `:latest`
+The `Publish image` workflow pushes `ghcr.io/<owner>/retail-rag-assistant:<short-sha>` (first 7 characters) and `:latest`
 on every push to `main`. Make the package public once (GitHub → Packages → package settings →
 Change visibility), or pass `--registry-*` credentials below.
 

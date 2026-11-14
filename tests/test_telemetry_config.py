@@ -1,3 +1,4 @@
+import os
 import sys
 import types
 
@@ -11,10 +12,12 @@ def test_connection_string_from_settings_reaches_exporter(monkeypatch):
     fake.configure_azure_monitor = lambda **kw: seen.update(kw)
     monkeypatch.setitem(sys.modules, "azure.monitor.opentelemetry", fake)
     monkeypatch.delenv("APPLICATIONINSIGHTS_CONNECTION_STRING", raising=False)
+    monkeypatch.delenv("OTEL_SERVICE_NAME", raising=False)
     monkeypatch.setattr(telemetry, "_configured", False)
 
-    assert telemetry.configure_telemetry("InstrumentationKey=test") is True
+    assert telemetry.configure_telemetry("InstrumentationKey=test", "retail-rag-api") is True
     assert seen["connection_string"] == "InstrumentationKey=test"
+    assert os.environ["OTEL_SERVICE_NAME"] == "retail-rag-api"
 
 
 def test_no_connection_string_is_a_no_op(monkeypatch):

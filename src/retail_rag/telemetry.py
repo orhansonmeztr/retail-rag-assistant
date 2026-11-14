@@ -22,10 +22,14 @@ GEN_AI_SYSTEM = "az.ai.openai"
 _configured = False
 
 
-def configure_telemetry(connection_string: str | None = None) -> bool:
+def configure_telemetry(
+    connection_string: str | None = None, service_name: str = "retail-rag"
+) -> bool:
     """Enable Azure Monitor export once, if a connection string is present.
 
     Pass it from Settings: a value that lives only in .env is not in os.environ.
+    service_name becomes the role name in Application Insights (otherwise
+    "unknown_service:python"); OTEL_SERVICE_NAME still overrides it.
     """
     global _configured
     connection_string = connection_string or os.getenv("APPLICATIONINSIGHTS_CONNECTION_STRING")
@@ -39,6 +43,7 @@ def configure_telemetry(connection_string: str | None = None) -> bool:
             "is not installed; traces are not exported"
         )
         return False
+    os.environ.setdefault("OTEL_SERVICE_NAME", service_name)
     configure_azure_monitor(connection_string=connection_string, logger_name="retail_rag")
     _configured = True
     return True
